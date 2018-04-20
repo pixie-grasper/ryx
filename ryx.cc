@@ -892,22 +892,22 @@ class context {
           if (unknown.find(id) != unknown.end()) {
             unknown.erase(id);
           }
-          std::vector<std::pair<token_id, shared_syntax_tree>> stack{};
-          stack.emplace_back(std::make_pair(id, syntax->subtree[2]));
-          while (!stack.empty()) {
-            token_id head_id = stack.back().first;
-            shared_syntax_tree subtree = stack.back().second;
-            stack.pop_back();
+          std::list<std::pair<token_id, shared_syntax_tree>> queue{};
+          queue.emplace_back(std::make_pair(id, syntax->subtree[2]));
+          while (!queue.empty()) {
+            token_id head_id = queue.back().first;
+            shared_syntax_tree subtree = queue.back().second;
+            queue.pop_back();
             switch (subtree->token.kind) {
               case token_kind::body_list:
-                stack.emplace_back(head_id, subtree->subtree[0]);
-                stack.emplace_back(head_id, subtree->subtree[1]);
+                queue.emplace_front(head_id, subtree->subtree[0]);
+                queue.emplace_front(head_id, subtree->subtree[1]);
                 break;
 
               case token_kind::body_list_rest:
                 if (!subtree->subtree.empty()) {
-                  stack.emplace_back(head_id, subtree->subtree[1]);
-                  stack.emplace_back(head_id, subtree->subtree[2]);
+                  queue.emplace_front(head_id, subtree->subtree[1]);
+                  queue.emplace_front(head_id, subtree->subtree[2]);
                 }
                 break;
 
@@ -920,6 +920,7 @@ class context {
 
               case token_kind::body: {
                 std::vector<token_id> rule{};
+                std::vector<std::pair<token_id, std::vector<token_id>>> rules{};
                 while (!subtree->subtree.empty()) {
                   shared_syntax_tree body_internal = subtree->subtree[0];
                   subtree = subtree->subtree[1];
@@ -988,16 +989,23 @@ class context {
                     nts.insert(new_token_id);
                     rule.push_back(new_token_id);
                     if (nullable) {
-                      token_id new_token_id_2 = gen_id(id_to_token[id]);
+                      token_id new_token_id_2;
+                      if (body_internal->subtree[0]->token.kind == token_kind::id) {
+                        new_token_id_2 = body_internal->subtree[0]->token.id;
+                      } else {
+                        new_token_id_2 = gen_id(id_to_token[id]);
+                      }
                       nts.insert(new_token_id_2);
                       std::vector<token_id> new_rule{};
                       new_rule.push_back(new_token_id_2);
                       if (infinitable) {
                         new_rule.push_back(new_token_id);
                       }
-                      add_rule(ret, new_token_id, std::move(new_rule));
-                      add_rule(ret, new_token_id, std::vector<token_id>());
-                      new_token_id = new_token_id_2;
+                      rules.emplace_back(std::make_pair(new_token_id, std::vector<token_id>()));
+                      rules.emplace_back(std::make_pair(new_token_id, std::move(new_rule)));
+                      if (body_internal->subtree[0]->token.kind != token_kind::id) {
+                        queue.emplace_front(std::make_pair(new_token_id_2, body_internal->subtree[1]));
+                      }
                     } else if (infinitable) {
                       token_id new_token_id_loop = new_token_id;
                       token_id new_token_id_break = gen_id(id_to_token[id]);
@@ -1013,27 +1021,36 @@ class context {
                         token_id new_token_id_2 = gen_id(id_to_token[id]);
                         nts.insert(new_token_id_2);
                         new_rule.push_back(new_token_id_2);
-                        add_rule(ret, new_token_id, std::move(new_rule));
+                        rules.emplace_back(std::make_pair(new_token_id, std::move(new_rule)));
                         if (first) {
                           first = false;
                         } else {
-                          add_rule(ret, new_token_id, std::vector<token_id>());
+                          rules.emplace_back(std::make_pair(new_token_id, std::vector<token_id>()));
                         }
                         new_token_id = new_token_id_2;
                       }
                       std::vector<token_id> new_rule{};
                       new_rule.push_back(new_token_id_loop);
-                      add_rule(ret, new_token_id, std::move(new_rule));
+                      rules.emplace_back(std::make_pair(new_token_id, std::move(new_rule)));
                       new_token_id = new_token_id_break;
-                    }
-                    if (body_internal->subtree[0]->token.kind == token_kind::id) {
-                      stack.emplace_back(std::make_pair(new_token_id, body_internal->subtree[0]));
+                      if (body_internal->subtree[0]->token.kind == token_kind::id) {
+                        queue.emplace_front(std::make_pair(new_token_id, body_internal->subtree[0]));
+                      } else {
+                        queue.emplace_front(std::make_pair(new_token_id, body_internal->subtree[1]));
+                      }
                     } else {
-                      stack.emplace_back(std::make_pair(new_token_id, body_internal->subtree[1]));
+                      if (body_internal->subtree[0]->token.kind == token_kind::id) {
+                        queue.emplace_front(std::make_pair(new_token_id, body_internal->subtree[0]));
+                      } else {
+                        queue.emplace_front(std::make_pair(new_token_id, body_internal->subtree[1]));
+                      }
                     }
                   }
                 }
                 add_rule(ret, head_id, std::move(rule));
+                for (auto&& it = rules.begin(); it != rules.end(); ++it) {
+                  add_rule(ret, it->first, std::move(it->second));
+                }
                 break;
               }
 

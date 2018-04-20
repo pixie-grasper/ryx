@@ -1,0 +1,30 @@
+%
+  TOKENLIST
+  END
+  OR
+  ID
+  IS
+;
+
+input = syntax_list
+      ;
+
+syntax_list = syntax syntax_list
+            |
+            ;
+
+syntax = ID IS body_list END
+       | TOKENLIST id_list END
+       ;
+
+body_list = id_list body_list_rest
+          ;
+
+body_list_rest = OR id_list body_list_rest
+               |
+               ;
+ 
+id_list = ID id_list
+        |
+        ;
+ 

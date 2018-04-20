@@ -1214,7 +1214,7 @@ class context {
     token_id did = get_id("$");
 
     std::unordered_map<token_id, bool> complete_to_build{};
-    std::unordered_map<token_id, bool> not_need_complete{};
+    std::unordered_map<token_id, bool> need_complete{};
     for (auto&& it = work->nts.begin(); it != work->nts.end(); ++it) {
       token_id target_token_id = *it;
       work->follow.insert(std::make_pair(target_token_id, std::unordered_set<token_id>()));
@@ -1230,9 +1230,9 @@ class context {
         }
       }
       if (has_epsilon) {
-        not_need_complete[target_token_id] = true;
+        need_complete[target_token_id] = true;
       } else {
-        not_need_complete[target_token_id] = false;
+        need_complete[target_token_id] = false;
       }
     }
 
@@ -1326,7 +1326,7 @@ class context {
                     ++follow) {
           std::cout << " " << id_to_token[*follow];
         }
-        if (!complete_to_build[id] && !not_need_complete[id]) {
+        if (!complete_to_build[id] && need_complete[id]) {
           std::cout << " : ";
           put_bad();
           std::cout << std::endl;
@@ -1340,7 +1340,7 @@ class context {
     }
 
     for (auto&& it = work->nts.begin(); it != work->nts.end(); ++it) {
-      if (!complete_to_build[*it]) {
+      if (!complete_to_build[*it] && need_complete[*it]) {
         return false;
       }
     }

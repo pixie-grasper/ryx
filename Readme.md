@@ -23,8 +23,6 @@ $ make
 
 - Generate codes
   - It has ability to syntax-check only now.
-- Accept extended notations
-  - BNF-like notation only now.
 
 ## Authors
 

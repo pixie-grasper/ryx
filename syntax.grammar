@@ -1,0 +1,60 @@
+%
+  TOKENLIST
+  END
+  OR
+  ID
+  IS
+  LPAREN
+  RPAREN
+  LCURL
+  RCURL
+  QUESTION
+  PLUS
+  STAR
+  NUM
+  COMMA
+;
+
+input = syntax_list
+      ;
+
+syntax_list = syntax syntax_list
+            |
+            ;
+
+syntax = ID IS body_list END
+       | TOKENLIST id_list END
+       ;
+
+body_list = body body_list_rest
+          ;
+
+body_list_rest = OR body body_list_rest
+               |
+               ;
+
+body = LPAREN body_list RPAREN body_opt_list
+     | ID body_opt_list
+     ;
+
+body_opt_list = body_opt body_opt_list
+              |
+              ;
+
+body_opt = QUESTION
+         | PLUS
+         | STAR
+         | LCURL range RCURL
+         ;
+
+range = NUM range_rest_opt
+      ;
+
+range_rest_opt = COMMA NUM
+               |
+               ;
+ 
+id_list = ID id_list
+        |
+        ;
+ 

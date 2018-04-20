@@ -911,6 +911,13 @@ class context {
                 }
                 break;
 
+              case token_kind::id: {
+                std::vector<token_id> new_rule{};
+                new_rule.push_back(subtree->token.id);
+                add_rule(ret, head_id, std::move(new_rule));
+                break;
+              }
+
               case token_kind::body: {
                 std::vector<token_id> rule{};
                 while (!subtree->subtree.empty()) {
@@ -978,9 +985,11 @@ class context {
                     rule.push_back(body_internal->subtree[0]->token.id);
                   } else {
                     token_id new_token_id = gen_id(id_to_token[id]);
+                    nts.insert(new_token_id);
                     rule.push_back(new_token_id);
                     if (nullable) {
                       token_id new_token_id_2 = gen_id(id_to_token[id]);
+                      nts.insert(new_token_id_2);
                       std::vector<token_id> new_rule{};
                       new_rule.push_back(new_token_id_2);
                       if (infinitable) {
@@ -992,6 +1001,7 @@ class context {
                     } else if (infinitable) {
                       token_id new_token_id_loop = new_token_id;
                       token_id new_token_id_break = gen_id(id_to_token[id]);
+                      nts.insert(new_token_id_break);
                       int count = 0;
                       bool first = true;
                       for (auto&& it = combination.begin(); it != combination.end(); ++it) {
@@ -1001,6 +1011,7 @@ class context {
                           count++;
                         }
                         token_id new_token_id_2 = gen_id(id_to_token[id]);
+                        nts.insert(new_token_id_2);
                         new_rule.push_back(new_token_id_2);
                         add_rule(ret, new_token_id, std::move(new_rule));
                         if (first) {
@@ -1016,9 +1027,9 @@ class context {
                       new_token_id = new_token_id_break;
                     }
                     if (body_internal->subtree[0]->token.kind == token_kind::id) {
-                      stack.emplace_back(std::make_pair(new_token_id, syntax->subtree[0]));
+                      stack.emplace_back(std::make_pair(new_token_id, body_internal->subtree[0]));
                     } else {
-                      stack.emplace_back(std::make_pair(new_token_id, syntax->subtree[1]));
+                      stack.emplace_back(std::make_pair(new_token_id, body_internal->subtree[1]));
                     }
                   }
                 }

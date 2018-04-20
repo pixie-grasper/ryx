@@ -57,8 +57,8 @@ range = NUM range_rest_opt
 range_rest_opt = COMMA NUM
                |
                ;
- 
+
 id_list = ID id_list
         |
         ;
- 
+

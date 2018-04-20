@@ -33,9 +33,13 @@ body_list_rest = OR body body_list_rest
                |
                ;
 
-body = LPAREN body_list RPAREN body_opt_list
-     | ID body_opt_list
+body = body_internal body
+     |
      ;
+
+body_internal = LPAREN body_list RPAREN body_opt_list
+              | ID body_opt_list
+              ;
 
 body_opt_list = body_opt body_opt_list
               |

@@ -1087,7 +1087,7 @@ class context {
                 std::list<token_id> regexp_head_ids{};
                 {
                   std::vector<token_id> rule{};
-                  for (std::size_t index = 0; index < regexp_tokens->size(); ++index) {
+                  for (std::size_t index = 0; index < regexp_tokens->size();) {
                     std::shared_ptr<std::vector<std::string>> term =
                       std::make_shared<std::vector<std::string>>();
                     std::shared_ptr<std::set<int>> combination =
@@ -1114,6 +1114,7 @@ class context {
                       }
                     } else {
                       term->push_back(regexp_tokens->at(index));
+                      ++index;
                     }
 
                     combination->insert(1);

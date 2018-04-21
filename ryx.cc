@@ -814,6 +814,7 @@ class context {
             case token_kind::lparen:
             case token_kind::rparen:
             case token_kind::id:
+            case token_kind::regexp:
             case token_kind::end:
             case token_kind::or_:
               stack.pop_back();
@@ -1281,7 +1282,7 @@ class context {
                         }
                         if (reversed) {
                           for (std::size_t i = 0; i < 256; ++i) {
-                            contains[i] = ~contains[i];
+                            contains[i] = !contains[i];
                           }
                         }
                       } else {
@@ -1294,6 +1295,9 @@ class context {
                         if (0x20 <= i && i <= 0x7E) {
                           token.push_back('\'');
                           token.push_back(static_cast<char>(i));
+                          if (i == '\\') {
+                            token.push_back(static_cast<char>(i));
+                          }
                           token.push_back('\'');
                         } else {
                           token = "0x";
@@ -1906,21 +1910,30 @@ class context {
           } else if (work->table[stack_token_id][input_token_id] == empty_rule_id) {
             work->table[stack_token_id][input_token_id] = rid;
           } else {
-            booked = true;
+            bool booked_now = true;
             rule_id old_rule_id = work->table[stack_token_id][input_token_id];
             work->table[stack_token_id][input_token_id] = booked_rule_id;
             if (sure_partial_book) {
               if (work->first[rid].find(eid) != work->first[rid].end()) {
-                booked = false;
+                booked_now = false;
                 partial_booked = true;
                 work->table[stack_token_id][input_token_id] = old_rule_id;
               } else if (work->first[old_rule_id].find(eid) !=
                          work->first[old_rule_id].end()) {
-                booked = false;
+                booked_now = false;
                 partial_booked = true;
                 work->table[stack_token_id][input_token_id] = rid;
               }
             }
+            if (booked_now && verbose) {
+              put_warning();
+              std::cout << "booked on state "
+                        << id_to_token[stack_token_id]
+                        << " with token "
+                        << id_to_token[input_token_id]
+                        << std::endl;
+            }
+            booked |= booked_now;
           }
         }
 
@@ -1932,21 +1945,30 @@ class context {
             if (work->table[stack_token_id][input_token_id] == empty_rule_id) {
               work->table[stack_token_id][input_token_id] = rid;
             } else if (work->table[stack_token_id][input_token_id] != rid) {
-              booked = true;
+              bool booked_now = true;
               rule_id old_rule_id = work->table[stack_token_id][input_token_id];
               work->table[stack_token_id][input_token_id] = booked_rule_id;
               if (sure_partial_book) {
                 if (work->first[rid].find(eid) != work->first[rid].end()) {
-                  booked = false;
+                  booked_now = false;
                   partial_booked = true;
                   work->table[stack_token_id][input_token_id] = old_rule_id;
                 } else if (work->first[old_rule_id].find(eid) !=
                            work->first[old_rule_id].end()) {
-                  booked = false;
+                  booked_now = false;
                   partial_booked = true;
                   work->table[stack_token_id][input_token_id] = rid;
                 }
               }
+              if (booked_now && verbose) {
+                put_warning();
+                std::cout << "booked on state "
+                          << id_to_token[stack_token_id]
+                          << " with token "
+                          << id_to_token[input_token_id]
+                          << std::endl;
+              }
+              booked |= booked_now;
             }
           }
         }

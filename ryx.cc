@@ -330,6 +330,25 @@ class context {
           }
         }
 
+        case '"': {
+          std::string token_string{};
+
+          ch = is->get();
+          while (ch != EOF && ch != '"') {
+            token_string.push_back(static_cast<char>(ch));
+            if (ch == '\\') {
+              token_string.push_back(static_cast<char>(is->get()));
+            }
+            ch = is->get();
+          }
+
+          if (token_string.size() == 0) {
+            continue;
+          } else {
+            return token(token_kind::id, get_id('"' + token_string + '"'));
+          }
+        }
+
         default: {
           std::string token_string{};
           bool number = true;

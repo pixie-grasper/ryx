@@ -36,9 +36,7 @@ body = '(' body_list ')' body_opt*
      | ID body_opt*
      ;
 
-body_opt = '?'
-         | '+'
-         | '*'
+body_opt = /[?+*]/
          | '{' NUM (',' NUM)? '}'
          ;
 ```

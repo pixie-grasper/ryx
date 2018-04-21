@@ -1240,14 +1240,23 @@ class context {
                       } else if (regexp[0] == '[') {
                         std::vector<char> regexp_array{};
                         std::vector<int> regexp_ranged{};
+                        bool reversed = false;
                         for (std::size_t i = 1; i < regexp.size() - 1; ++i) {
-                          if (regexp[i] == '\\') {
+                          if (regexp[i] == '^') {
+                            reversed = true;
                             ++i;
+                          } else {
+                            if (regexp[i] == '\\') {
+                              ++i;
+                            }
+                            regexp_array.push_back(regexp[i]);
+                            regexp_ranged.push_back(0);
                           }
-                          regexp_array.push_back(regexp[i]);
-                          regexp_ranged.push_back(0);
                         }
                         for (std::size_t i = 1; i < regexp_array.size() - 1; ++i) {
+                          if (reversed && i == 1) {
+                            continue;
+                          }
                           if (regexp_array[i] == '-') {
                             if (regexp_ranged[i - 1] != 0) {
                               put_error_while_parse_regexp(regexp_source);
@@ -1272,6 +1281,11 @@ class context {
                             for (char c = first; c <= last; ++c) {
                               contains[static_cast<unsigned char>(c)] = true;
                             }
+                          }
+                        }
+                        if (reversed) {
+                          for (std::size_t i = 0; i < 256; ++i) {
+                            contains[i] = ~contains[i];
                           }
                         }
                       } else {

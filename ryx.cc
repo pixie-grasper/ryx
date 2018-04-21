@@ -157,6 +157,7 @@ class context {
   bool parsed, checked, ll1p;
   int lr, ln;
   int genid;
+  char current_quote;
 
   void put_linenumber(void) {
     std::cout << "line " << (std::max(lr, ln) + 1) << std::endl;
@@ -250,6 +251,28 @@ class context {
 
     for (;;) {
       int ch = is->get();
+      if (current_quote != '\0') {
+        if (ch == EOF) {
+          return token(token_kind::invalid);
+        } else if (ch == current_quote) {
+          current_quote = '\0';
+          continue;
+        } else {
+          std::string token_string{};
+          token_string.push_back('\'');
+          token_string.push_back(static_cast<char>(ch));
+          if (ch == '\\') {
+            ch = is->get();
+            if (ch == EOF) {
+              put_error_while_get_token();
+              return token(token_kind::invalid);
+            }
+            token_string.push_back(static_cast<char>(ch));
+          }
+          token_string.push_back('\'');
+          return token(token_kind::id, get_id(std::move(token_string)));
+        }
+      }
       switch (ch) {
         case EOF:
           return token(token_kind::end_of_file);
@@ -380,53 +403,10 @@ class context {
           }
         }
 
-        case '\'': {
-          std::string token_string{};
-
-          ch = is->get();
-          while (ch != EOF && ch != '\'') {
-            token_string.push_back(static_cast<char>(ch));
-            if (ch == '\\') {
-              ch = is->get();
-              if (ch == EOF) {
-                put_error_while_get_token();
-                return token(token_kind::invalid);
-              }
-              token_string.push_back(static_cast<char>(ch));
-            }
-            ch = is->get();
-          }
-
-          if (ch == EOF || token_string.size() == 0) {
-            continue;
-          } else {
-            return token(token_kind::id, get_id('\'' + token_string + '\''));
-          }
-        }
-
-        case '"': {
-          std::string token_string{};
-
-          ch = is->get();
-          while (ch != EOF && ch != '"') {
-            token_string.push_back(static_cast<char>(ch));
-            if (ch == '\\') {
-              ch = is->get();
-              if (ch == EOF) {
-                put_error_while_get_token();
-                return token(token_kind::invalid);
-              }
-              token_string.push_back(static_cast<char>(ch));
-            }
-            ch = is->get();
-          }
-
-          if (ch == EOF || token_string.size() == 0) {
-            continue;
-          } else {
-            return token(token_kind::id, get_id('"' + token_string + '"'));
-          }
-        }
+        case '\'':
+        case '"':
+          current_quote = static_cast<char>(ch);
+          continue;
 
         default: {
           std::string token_string{};
@@ -2135,6 +2115,7 @@ class context {
     lr = 0;
     ln = 0;
     genid = 0;
+    current_quote = '\0';
     return;
   }
 

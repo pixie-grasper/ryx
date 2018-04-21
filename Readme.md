@@ -25,21 +25,21 @@ $ make
 input = syntax*
       ;
 
-syntax = ID IS body_list END
-       | TOKENLIST ID* END
+syntax = ID '=' body_list ';'
+       | '%' ID* ';'
        ;
 
-body_list = body? (OR body?)*
+body_list = body? ('|' body?)*
           ;
 
-body = LPAREN body_list RPAREN body_opt*
+body = '(' body_list ')' body_opt*
      | ID body_opt*
      ;
 
-body_opt = QUESTION
-         | PLUS
-         | STAR
-         | LCURL NUM (COMMA NUM)? RCURL
+body_opt = '?'
+         | '+'
+         | '*'
+         | '{' NUM (',' NUM)? '}'
          ;
 ```
 

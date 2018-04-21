@@ -852,7 +852,9 @@ class context {
     return ret;
   }
 
-  void add_rule(const shared_working_memory& work, token_id head_id, std::vector<token_id>&& rule) {
+  void add_rule(const shared_working_memory& work,
+                token_id head_id,
+                std::vector<token_id>&& rule) {
     rule_id rule_id = work->rules.size();
     work->rules.insert(std::make_pair(rule_id, std::make_pair(head_id, std::move(rule))));
     work->rules_of_nts[head_id].insert(rule_id);
@@ -975,7 +977,9 @@ class context {
                         }
                         std::set<int> new_combination{};
                         for (int times = min; times <= max; times++) {
-                          for (auto&& it = combination.begin(); it != combination.end(); ++it) {
+                          for (auto&& it = combination.begin();
+                                      it != combination.end();
+                                      ++it) {
                             int value = *it * times;
                             if (new_combination.find(value) == new_combination.end()) {
                               new_combination.insert(value);
@@ -991,13 +995,16 @@ class context {
                     }
                   }
                   if (body_internal->subtree[0]->token.kind == token_kind::id) {
-                    if (ts.find(body_internal->subtree[0]->token.id) == ts.end() && nts.find(body_internal->subtree[0]->token.id) == nts.end()) {
+                    if (ts.find(body_internal->subtree[0]->token.id) == ts.end() &&
+                        nts.find(body_internal->subtree[0]->token.id) == nts.end()) {
                       if (id_to_token[body_internal->subtree[0]->token.id][0] == '\'') {
-                        if (unknown.find(body_internal->subtree[0]->token.id) != unknown.end()) {
+                        if (unknown.find(body_internal->subtree[0]->token.id) !=
+                            unknown.end()) {
                           unknown.erase(body_internal->subtree[0]->token.id);
                         }
                         ts.insert(body_internal->subtree[0]->token.id);
-                      } else if (unknown.find(body_internal->subtree[0]->token.id) == unknown.end()) {
+                      } else if (unknown.find(body_internal->subtree[0]->token.id) ==
+                                 unknown.end()) {
                         unknown.insert(body_internal->subtree[0]->token.id);
                       }
                     }
@@ -1025,10 +1032,12 @@ class context {
                       if (infinitable) {
                         new_rule.push_back(new_token_id);
                       }
-                      rules.emplace_back(std::make_pair(new_token_id, std::vector<token_id>()));
+                      rules.emplace_back(std::make_pair(new_token_id,
+                                                        std::vector<token_id>()));
                       rules.emplace_back(std::make_pair(new_token_id, std::move(new_rule)));
                       if (body_internal->subtree[0]->token.kind != token_kind::id) {
-                        queue.emplace_front(std::make_pair(new_token_id_2, body_internal->subtree[1]));
+                        queue.emplace_front(std::make_pair(new_token_id_2,
+                                                           body_internal->subtree[1]));
                       }
                     } else if (infinitable) {
                       token_id new_token_id = gen_id(id_to_token[id]);
@@ -1057,7 +1066,8 @@ class context {
                         if (first) {
                           first = false;
                         } else {
-                          rules.emplace_back(std::make_pair(new_token_id, std::vector<token_id>()));
+                          rules.emplace_back(std::make_pair(new_token_id,
+                                                            std::vector<token_id>()));
                         }
                         new_token_id = new_token_id_2;
                       }
@@ -1066,7 +1076,8 @@ class context {
                       rules.emplace_back(std::make_pair(new_token_id, std::move(new_rule)));
                       new_token_id = new_token_id_break;
                       if (body_internal->subtree[0]->token.kind != token_kind::id) {
-                        queue.emplace_front(std::make_pair(new_token_id, body_internal->subtree[1]));
+                        queue.emplace_front(std::make_pair(new_token_id,
+                                                           body_internal->subtree[1]));
                       }
                     } else {
                       if (body_internal->subtree[0]->token.kind == token_kind::id) {
@@ -1075,7 +1086,8 @@ class context {
                         token_id new_token_id = gen_id(id_to_token[id]);
                         nts.insert(new_token_id);
                         rule.push_back(new_token_id);
-                        queue.emplace_front(std::make_pair(new_token_id, body_internal->subtree[1]));
+                        queue.emplace_front(std::make_pair(new_token_id,
+                                                           body_internal->subtree[1]));
                       }
                     }
                   }

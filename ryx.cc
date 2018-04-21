@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+#include <array>
 #include <fstream>
 #include <list>
 #include <iomanip>
@@ -95,6 +96,7 @@ class context {
     // terminals
     id,
     num,
+    regexp,
     is,
     or_,
     end,
@@ -147,6 +149,7 @@ class context {
 
   std::unordered_map<std::string, token_id> token_to_id;
   std::unordered_map<token_id, std::string> id_to_token;
+  std::unordered_map<token_id, std::string> id_to_regexp_body;
   shared_syntax_tree parsed_input;
 
   std::istream* is;
@@ -171,8 +174,14 @@ class context {
     }
   }
 
+  token_id get_id_regexp(const std::string& token_string) {
+    token_id id = get_id("/" + token_string + "/");
+    id_to_regexp_body[id] = token_string;
+    return id;
+  }
+
   token_id gen_id(const std::string& token_string) {
-    genid++;
+    ++genid;
     return get_id(token_string + "[" + std::to_string(genid) + "]");
   }
 
@@ -311,6 +320,66 @@ class context {
         case ',':
           return token(token_kind::comma);
 
+        case '/': {
+          std::string token_string{};
+
+          ch = is->get();
+          while (ch != EOF && ch != '/') {
+            token_string.push_back(static_cast<char>(ch));
+            if (ch == '\\') {
+              ch = is->get();
+              if (ch == EOF) {
+                put_error_while_get_token();
+                return token(token_kind::invalid);
+              }
+              token_string.push_back(static_cast<char>(ch));
+            } else if (ch == '[') {
+              ch = is->get();
+              if (ch == EOF) {
+                put_error_while_get_token();
+                return token(token_kind::invalid);
+              } else {
+                token_string.push_back(static_cast<char>(ch));
+                if (ch == '\\') {
+                  ch = is->get();
+                  if (ch == EOF) {
+                    put_error_while_get_token();
+                    return token(token_kind::invalid);
+                  }
+                  token_string.push_back(static_cast<char>(ch));
+                }
+              }
+              ch = is->get();
+              while (ch != EOF && ch != ']') {
+                token_string.push_back(static_cast<char>(ch));
+                if (ch == '\\') {
+                  ch = is->get();
+                  if (ch == EOF) {
+                    put_error_while_get_token();
+                    return token(token_kind::invalid);
+                  }
+                  token_string.push_back(static_cast<char>(ch));
+                }
+                ch = is->get();
+              }
+              if (ch == EOF) {
+                put_error_while_get_token();
+                return token(token_kind::invalid);
+              }
+              token_string.push_back(static_cast<char>(ch));
+            }
+            ch = is->get();
+          }
+          if (ch == EOF) {
+            put_error_while_get_token();
+            return token(token_kind::invalid);
+          } else if (token_string.size() == 0) {
+            continue;
+          } else {
+            return token(token_kind::regexp, get_id_regexp(token_string));
+          }
+        }
+
         case '\'': {
           std::string token_string{};
 
@@ -318,12 +387,17 @@ class context {
           while (ch != EOF && ch != '\'') {
             token_string.push_back(static_cast<char>(ch));
             if (ch == '\\') {
-              token_string.push_back(static_cast<char>(is->get()));
+              ch = is->get();
+              if (ch == EOF) {
+                put_error_while_get_token();
+                return token(token_kind::invalid);
+              }
+              token_string.push_back(static_cast<char>(ch));
             }
             ch = is->get();
           }
 
-          if (token_string.size() == 0) {
+          if (ch == EOF || token_string.size() == 0) {
             continue;
           } else {
             return token(token_kind::id, get_id('\'' + token_string + '\''));
@@ -337,12 +411,17 @@ class context {
           while (ch != EOF && ch != '"') {
             token_string.push_back(static_cast<char>(ch));
             if (ch == '\\') {
-              token_string.push_back(static_cast<char>(is->get()));
+              ch = is->get();
+              if (ch == EOF) {
+                put_error_while_get_token();
+                return token(token_kind::invalid);
+              }
+              token_string.push_back(static_cast<char>(ch));
             }
             ch = is->get();
           }
 
-          if (token_string.size() == 0) {
+          if (ch == EOF || token_string.size() == 0) {
             continue;
           } else {
             return token(token_kind::id, get_id('"' + token_string + '"'));
@@ -423,6 +502,7 @@ class context {
           case token_kind::range_rest_opt:  std::cout << "range-rest-opt";  break;
           case token_kind::id_list:         std::cout << "id-list";         break;
           case token_kind::id:              std::cout << "ID";              break;
+          case token_kind::regexp:          std::cout << "REGEXP";          break;
           case token_kind::num:             std::cout << "NUM";             break;
           case token_kind::is:              std::cout << "=";               break;
           case token_kind::or_:             std::cout << "|";               break;
@@ -460,6 +540,7 @@ class context {
         switch (t.kind) {
           case token_kind::id:          std::cout << id_to_token[t.id]; break;
           case token_kind::num:         std::cout << id_to_token[t.id]; break;
+          case token_kind::regexp:      std::cout << id_to_token[t.id]; break;
           case token_kind::end_of_file: std::cout << "$"; break;
           case token_kind::is:          std::cout << "="; break;
           case token_kind::or_:         std::cout << "|"; break;
@@ -603,6 +684,7 @@ class context {
           node->subtree.back()->token = token(token_kind::body_list);
           switch (t.kind) {
             case token_kind::id:
+            case token_kind::regexp:
             case token_kind::end:
             case token_kind::or_:
             case token_kind::lparen:
@@ -653,6 +735,7 @@ class context {
           node->subtree.back()->token = token(token_kind::body);
           switch (t.kind) {
             case token_kind::id:
+            case token_kind::regexp:
             case token_kind::lparen:
               stack.pop_back();
               stack.push_back(token_kind::end_of_body);
@@ -684,6 +767,14 @@ class context {
               stack.push_back(token_kind::end_of_body);
               stack.push_back(token_kind::body_opt_list);
               stack.push_back(token_kind::id);
+              node = node->subtree.back();
+              break;
+
+            case token_kind::regexp:
+              stack.pop_back();
+              stack.push_back(token_kind::end_of_body);
+              stack.push_back(token_kind::body_opt_list);
+              stack.push_back(token_kind::regexp);
               node = node->subtree.back();
               break;
 
@@ -871,6 +962,12 @@ class context {
     return ret;
   }
 
+  void put_error_while_parse_regexp(const std::string& regexp) {
+    put_error();
+    std::cout << "invalid regexp /" << regexp << "/" << std::endl;
+    return;
+  }
+
   void add_rule(const shared_working_memory& work,
                 token_id head_id,
                 std::vector<token_id>&& rule) {
@@ -951,6 +1048,126 @@ class context {
                 }
                 break;
 
+              case token_kind::regexp: {
+                std::vector<std::string> regexp_terms{};
+                std::string regexp_source = id_to_regexp_body[subtree->token.id];
+                for (std::size_t i = 0; i < regexp_source.size(); ++i) {
+                  if (regexp_source[i] == '[') {
+                    std::string regexp{};
+                    regexp.push_back(regexp_source[i]);
+                    ++i;
+                    regexp.push_back(regexp_source[i]);
+                    if (regexp_source[i] == '\\') {
+                      ++i;
+                      regexp.push_back(regexp_source[i]);
+                    }
+                    for (++i; regexp_source[i] != ']'; ++i) {
+                      regexp.push_back(regexp_source[i]);
+                      if (regexp_source[i] == '\\') {
+                        ++i;
+                        regexp.push_back(regexp_source[i]);
+                      }
+                    }
+                    regexp.push_back(regexp_source[i]);
+                    regexp_terms.push_back(regexp);
+                  } else {
+                    std::string regexp{};
+                    regexp.push_back(regexp_source[i]);
+                    if (regexp_source[i] == '\\') {
+                      ++i;
+                      regexp.push_back(regexp_source[i]);
+                    }
+                    regexp_terms.push_back(regexp);
+                  }
+                }
+                if (regexp_terms.size() == 1) {
+                  std::string regexp = regexp_terms[0];
+                  if (regexp == "+" || regexp == "*" || regexp == "?") {
+                    put_error_while_parse_regexp(regexp);
+                    errored = true;
+                  } else {
+                    std::array<bool, 256> contains{};
+                    if (regexp == ".") {
+                      for (std::size_t i = 0; i < 256; ++i) {
+                        contains[i] = true;
+                      }
+                    } else {
+                      for (std::size_t i = 0; i < 256; ++i) {
+                        contains[i] = false;
+                      }
+                      if (regexp[0] == '\\') {
+                        contains[static_cast<unsigned char>(regexp[1])] = true;
+                      } else if (regexp[0] == '[') {
+                        std::vector<char> regexp_array{};
+                        std::vector<int> regexp_ranged{};
+                        for (std::size_t i = 1; i < regexp.size() - 1; ++i) {
+                          if (regexp[i] == '\\') {
+                            ++i;
+                          }
+                          regexp_array.push_back(regexp[i]);
+                          regexp_ranged.push_back(0);
+                        }
+                        for (std::size_t i = 1; i < regexp_array.size() - 1; ++i) {
+                          if (regexp_array[i] == '-') {
+                            if (regexp_ranged[i - 1] != 0) {
+                              put_error_while_parse_regexp(regexp);
+                              errored = true;
+                            }
+                            regexp_ranged[i - 1] = 1;
+                            regexp_ranged[i] = 2;
+                            regexp_ranged[i + 1] = 1;
+                            ++i;
+                          }
+                        }
+                        for (std::size_t i = 0; i < regexp_array.size(); ++i) {
+                          if (regexp_ranged[i] == 0) {
+                            contains[static_cast<unsigned char>(regexp_array[i])] = true;
+                          } else if (regexp_ranged[i] == 2) {
+                            char first = regexp_array[i - 1];
+                            char last = regexp_array[i + 1];
+                            if (first >= last) {
+                              put_error_while_parse_regexp(regexp);
+                              errored = true;
+                            }
+                            for (char c = first; c <= last; ++c) {
+                              contains[static_cast<unsigned char>(c)] = true;
+                            }
+                          }
+                        }
+                      } else {
+                        contains[static_cast<unsigned char>(regexp[0])] = true;
+                      }
+                      for (std::size_t i = 0; i < 256; ++i) {
+                        if (contains[i]) {
+                          std::string token{};
+                          if (0x20 <= i && i <= 0x7E) {
+                            token.push_back('\'');
+                            token.push_back(static_cast<char>(i));
+                            token.push_back('\'');
+                          } else {
+                            token = "0x";
+                            token.push_back((i & 0xF0) >> 4);
+                            token.push_back(i & 0x0F);
+                          }
+                          token_id regex_token_id = get_id(token);
+                          if (unknown.find(regex_token_id) != unknown.end()) {
+                            unknown.erase(regex_token_id);
+                          }
+                          if (ts.find(regex_token_id) == ts.end()) {
+                            ts.insert(regex_token_id);
+                          }
+                          std::vector<token_id> rule{};
+                          rule.push_back(regex_token_id);
+                          add_rule(ret, head_id, std::move(rule));
+                        }
+                      }
+                    }
+                  }
+                } else {
+                }
+                break;
+              }
+
               case token_kind::body: {
                 std::vector<token_id> rule{};
                 std::vector<std::pair<token_id, std::vector<token_id>>> rules{};
@@ -958,9 +1175,13 @@ class context {
                   shared_syntax_tree body_internal = subtree->subtree[0];
                   subtree = subtree->subtree[1];
                   shared_syntax_tree body_opt_list = nullptr;
-                  if (body_internal->subtree[0]->token.kind == token_kind::id) {
+                  shared_syntax_tree body_main_term = nullptr;
+                  if (body_internal->subtree[0]->token.kind == token_kind::id ||
+                      body_internal->subtree[0]->token.kind == token_kind::regexp) {
+                    body_main_term = body_internal->subtree[0];
                     body_opt_list = body_internal->subtree[1];
                   } else {
+                    body_main_term = body_internal->subtree[1];
                     body_opt_list = body_internal->subtree[3];
                   }
                   bool nullable = false;
@@ -995,7 +1216,7 @@ class context {
                           max = std::stoi(id_to_token[range_rest_opt->subtree[1]->token.id]);
                         }
                         std::set<int> new_combination{};
-                        for (int times = min; times <= max; times++) {
+                        for (int times = min; times <= max; ++times) {
                           for (auto&& it = combination.begin();
                                       it != combination.end();
                                       ++it) {
@@ -1013,18 +1234,17 @@ class context {
                         break;
                     }
                   }
-                  if (body_internal->subtree[0]->token.kind == token_kind::id) {
-                    if (ts.find(body_internal->subtree[0]->token.id) == ts.end() &&
-                        nts.find(body_internal->subtree[0]->token.id) == nts.end()) {
-                      if (id_to_token[body_internal->subtree[0]->token.id][0] == '\'') {
-                        if (unknown.find(body_internal->subtree[0]->token.id) !=
+                  if (body_main_term->token.kind == token_kind::id) {
+                    if (ts.find(body_main_term->token.id) == ts.end() &&
+                        nts.find(body_main_term->token.id) == nts.end()) {
+                      if (id_to_token[body_main_term->token.id][0] == '\'') {
+                        if (unknown.find(body_main_term->token.id) !=
                             unknown.end()) {
-                          unknown.erase(body_internal->subtree[0]->token.id);
+                          unknown.erase(body_main_term->token.id);
                         }
-                        ts.insert(body_internal->subtree[0]->token.id);
-                      } else if (unknown.find(body_internal->subtree[0]->token.id) ==
-                                 unknown.end()) {
-                        unknown.insert(body_internal->subtree[0]->token.id);
+                        ts.insert(body_main_term->token.id);
+                      } else if (unknown.find(body_main_term->token.id) == unknown.end()) {
+                        unknown.insert(body_main_term->token.id);
                       }
                     }
                   }
@@ -1032,16 +1252,16 @@ class context {
                       !infinitable &&
                       combination.size() == 1 &&
                       combination.find(1) != combination.end() &&
-                      body_internal->subtree[0]->token.kind == token_kind::id) {
-                    rule.push_back(body_internal->subtree[0]->token.id);
+                      body_main_term->token.kind == token_kind::id) {
+                    rule.push_back(body_main_term->token.id);
                   } else {
                     if (nullable) {
                       token_id new_token_id = gen_id(id_to_token[id]);
                       nts.insert(new_token_id);
                       rule.push_back(new_token_id);
                       token_id new_token_id_2;
-                      if (body_internal->subtree[0]->token.kind == token_kind::id) {
-                        new_token_id_2 = body_internal->subtree[0]->token.id;
+                      if (body_main_term->token.kind == token_kind::id) {
+                        new_token_id_2 = body_main_term->token.id;
                       } else {
                         new_token_id_2 = gen_id(id_to_token[id]);
                       }
@@ -1054,9 +1274,8 @@ class context {
                       rules.emplace_back(std::make_pair(new_token_id,
                                                         std::vector<token_id>()));
                       rules.emplace_back(std::make_pair(new_token_id, std::move(new_rule)));
-                      if (body_internal->subtree[0]->token.kind != token_kind::id) {
-                        queue.emplace_front(std::make_pair(new_token_id_2,
-                                                           body_internal->subtree[1]));
+                      if (body_main_term->token.kind != token_kind::id) {
+                        queue.emplace_front(std::make_pair(new_token_id_2, body_main_term));
                       }
                     } else if (infinitable) {
                       token_id new_token_id = gen_id(id_to_token[id]);
@@ -1064,8 +1283,8 @@ class context {
                       rule.push_back(new_token_id);
                       token_id new_token_id_loop = new_token_id;
                       token_id new_token_id_break;
-                      if (body_internal->subtree[0]->token.kind == token_kind::id) {
-                        new_token_id_break = body_internal->subtree[0]->token.id;
+                      if (body_main_term->token.kind == token_kind::id) {
+                        new_token_id_break = body_main_term->token.id;
                       } else {
                         new_token_id_break = gen_id(id_to_token[id]);
                       }
@@ -1094,9 +1313,8 @@ class context {
                       new_rule.push_back(new_token_id_loop);
                       rules.emplace_back(std::make_pair(new_token_id, std::move(new_rule)));
                       new_token_id = new_token_id_break;
-                      if (body_internal->subtree[0]->token.kind != token_kind::id) {
-                        queue.emplace_front(std::make_pair(new_token_id,
-                                                           body_internal->subtree[1]));
+                      if (body_main_term->token.kind != token_kind::id) {
+                        queue.emplace_front(std::make_pair(new_token_id, body_main_term));
                       }
                     } else {
                       if (body_internal->subtree[0]->token.kind == token_kind::id) {
@@ -1105,8 +1323,7 @@ class context {
                         token_id new_token_id = gen_id(id_to_token[id]);
                         nts.insert(new_token_id);
                         rule.push_back(new_token_id);
-                        queue.emplace_front(std::make_pair(new_token_id,
-                                                           body_internal->subtree[1]));
+                        queue.emplace_front(std::make_pair(new_token_id, body_main_term));
                       }
                     }
                   }
@@ -1613,6 +1830,7 @@ class context {
   void clear(void) {
     token_to_id.clear();
     id_to_token.clear();
+    id_to_regexp_body.clear();
     is = nullptr;
     parsed_input = nullptr;
     parsed = false;
@@ -1670,7 +1888,7 @@ int main(int argc, char** argv) {
   bool verbose = false;
   bool quiet = false;
   bool table = false;
-  for (int i = 1; i < argc; i++) {
+  for (int i = 1; i < argc; ++i) {
     if (argv[i][0] == '-') {
       if (argv[i][1] == 'v') {
         verbose = true;

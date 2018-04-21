@@ -340,7 +340,7 @@ class context {
                 return token(token_kind::invalid);
               } else {
                 token_string.push_back(static_cast<char>(ch));
-                if (ch == '\\') {
+                if (ch == '\\' || ch == '^') {
                   ch = is->get();
                   if (ch == EOF) {
                     put_error_while_get_token();
@@ -1058,7 +1058,7 @@ class context {
                     regexp.push_back(regexp_source[i]);
                     ++i;
                     regexp.push_back(regexp_source[i]);
-                    if (regexp_source[i] == '\\') {
+                    if (regexp_source[i] == '\\' || regexp_source[i] == '^') {
                       ++i;
                       regexp.push_back(regexp_source[i]);
                     }
@@ -1242,9 +1242,8 @@ class context {
                         std::vector<int> regexp_ranged{};
                         bool reversed = false;
                         for (std::size_t i = 1; i < regexp.size() - 1; ++i) {
-                          if (regexp[i] == '^') {
+                          if (i == 1 && regexp[i] == '^') {
                             reversed = true;
-                            ++i;
                           } else {
                             if (regexp[i] == '\\') {
                               ++i;
@@ -1254,9 +1253,6 @@ class context {
                           }
                         }
                         for (std::size_t i = 1; i < regexp_array.size() - 1; ++i) {
-                          if (reversed && i == 1) {
-                            continue;
-                          }
                           if (regexp_array[i] == '-') {
                             if (regexp_ranged[i - 1] != 0) {
                               put_error_while_parse_regexp(regexp_source);
@@ -1301,8 +1297,8 @@ class context {
                           token.push_back('\'');
                         } else {
                           token = "0x";
-                          token.push_back((i & 0xF0) >> 4);
-                          token.push_back(i & 0x0F);
+                          token.push_back(itoh((i & 0xF0) >> 4));
+                          token.push_back(itoh(i & 0x0F));
                         }
                         token_id regex_token_id = get_id(token);
                         if (unknown.find(regex_token_id) != unknown.end()) {
@@ -1351,9 +1347,7 @@ class context {
                       regexp_nullable.push_back(false);
                       regexp_infinitable.push_back(false);
                       regexp_head_ids.push_back(new_token_id);
-                    } else {
-                      token_id new_token_id = gen_id(id_to_token[subtree->token.id]);
-                      nts.insert(new_token_id);
+                    } else if (combination->size() != 1) {
                       token_id new_token_id_break = gen_id(id_to_token[subtree->token.id]);
                       nts.insert(new_token_id_break);
                       int count = 0;
@@ -1375,11 +1369,34 @@ class context {
                         }
                         regexp_head_id = new_token_id_2;
                       }
+                      add_rule(ret, regexp_head_id, std::vector<token_id>());
+                      std::shared_ptr<std::set<int>> new_combination =
+                        std::make_shared<std::set<int>>();
+                      new_combination->insert(1);
                       regexp_terms.emplace_back(std::move(term));
-                      regexp_combination.emplace_back(std::make_shared<std::set<int>>());
+                      regexp_combination.emplace_back(std::move(new_combination));
                       regexp_nullable.push_back(false);
                       regexp_infinitable.push_back(false);
-                      regexp_head_ids.push_back(new_token_id);
+                      regexp_head_ids.push_back(new_token_id_break);
+                    } else {
+                      std::vector<token_id> rule{};
+                      for (std::size_t i = 0; i < term->size(); ++i) {
+                        token_id new_token_id = gen_id(id_to_token[subtree->token.id]);
+                        nts.insert(new_token_id);
+                        rule.push_back(new_token_id);
+                        std::shared_ptr<std::vector<std::string>> new_term =
+                          std::make_shared<std::vector<std::string>>();
+                        new_term->push_back(term->at(i));
+                        std::shared_ptr<std::set<int>> new_combination =
+                          std::make_shared<std::set<int>>();
+                        new_combination->insert(1);
+                        regexp_terms.emplace_back(std::move(new_term));
+                        regexp_combination.emplace_back(std::move(new_combination));
+                        regexp_nullable.push_back(false);
+                        regexp_infinitable.push_back(false);
+                        regexp_head_ids.push_back(new_token_id);
+                      }
+                      add_rule(ret, regexp_head_id, std::move(rule));
                     }
                   }
                 }

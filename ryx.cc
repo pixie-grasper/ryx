@@ -1030,7 +1030,7 @@ class context {
             unknown.erase(id);
           }
           std::list<std::pair<token_id, shared_syntax_tree>> queue{};
-          queue.emplace_back(std::make_pair(id, syntax->subtree[2]));
+          queue.emplace_front(std::make_pair(id, syntax->subtree[2]));
           while (!queue.empty()) {
             token_id head_id = queue.back().first;
             shared_syntax_tree subtree = queue.back().second;
@@ -1049,11 +1049,12 @@ class context {
                 break;
 
               case token_kind::regexp: {
-                std::vector<std::string> regexp_terms{};
+                std::shared_ptr<std::vector<std::string>> regexp_tokens =
+                  std::make_shared<std::vector<std::string>>();
                 std::string regexp_source = id_to_regexp_body[subtree->token.id];
                 for (std::size_t i = 0; i < regexp_source.size(); ++i) {
+                  std::string regexp{};
                   if (regexp_source[i] == '[') {
-                    std::string regexp{};
                     regexp.push_back(regexp_source[i]);
                     ++i;
                     regexp.push_back(regexp_source[i]);
@@ -1069,23 +1070,161 @@ class context {
                       }
                     }
                     regexp.push_back(regexp_source[i]);
-                    regexp_terms.push_back(regexp);
                   } else {
-                    std::string regexp{};
                     regexp.push_back(regexp_source[i]);
                     if (regexp_source[i] == '\\') {
                       ++i;
                       regexp.push_back(regexp_source[i]);
                     }
-                    regexp_terms.push_back(regexp);
                   }
+                  regexp_tokens->emplace_back(std::move(regexp));
                 }
-                if (regexp_terms.size() == 1) {
-                  std::string regexp = regexp_terms[0];
-                  if (regexp == "+" || regexp == "*" || regexp == "?") {
-                    put_error_while_parse_regexp(regexp);
-                    errored = true;
-                  } else {
+
+                std::list<std::shared_ptr<std::vector<std::string>>> regexp_terms{};
+                std::list<std::shared_ptr<std::set<int>>> regexp_combination{};
+                std::list<bool> regexp_nullable{};
+                std::list<bool> regexp_infinitable{};
+                std::list<token_id> regexp_head_ids{};
+                {
+                  std::vector<token_id> rule{};
+                  for (std::size_t index = 0; index < regexp_tokens->size(); ++index) {
+                    std::shared_ptr<std::vector<std::string>> term =
+                      std::make_shared<std::vector<std::string>>();
+                    std::shared_ptr<std::set<int>> combination =
+                      std::make_shared<std::set<int>>();
+                    bool nullable = false;
+                    bool infinitable = false;
+
+                    if (regexp_tokens->at(index) == "(") {
+                      int nest = 1;
+                      for (++index; index < regexp_tokens->size() && nest != 0; ++index) {
+                        if (regexp_tokens->at(index) == ")") {
+                          --nest;
+                          if (nest == 0) {
+                            continue;
+                          }
+                        } else if (regexp_tokens->at(index) == "(") {
+                          ++nest;
+                        }
+                        term->push_back(regexp_tokens->at(index));
+                      }
+                      if (nest != 0) {
+                        put_error_while_parse_regexp(regexp_source);
+                        break;
+                      }
+                    } else {
+                      term->push_back(regexp_tokens->at(index));
+                    }
+
+                    combination->insert(1);
+                    while (index < regexp_tokens->size()) {
+                      if (regexp_tokens->at(index).size() == 1) {
+                        char c = regexp_tokens->at(index)[0];
+                        if (c == '?') {
+                          nullable = true;
+                        } else if (c == '*') {
+                          nullable = true;
+                          infinitable = true;
+                        } else if (c == '+') {
+                          infinitable = true;
+                        } else if (c == '{') {
+                          bool is_pair = false;
+                          bool first_char = true;
+                          int min = -1, max = -1;
+                          for (++index; index < regexp_tokens->size(); ++index) {
+                            if (regexp_tokens->at(index).size() != 1) {
+                              errored = true;
+                              break;
+                            } else {
+                              c = regexp_tokens->at(index)[0];
+                              if (c == '}') {
+                                break;
+                              } else if (c == ',') {
+                                if (is_pair) {
+                                  errored = true;
+                                  break;
+                                } else {
+                                  is_pair = true;
+                                  first_char = true;
+                                  min = max;
+                                  max = -1;
+                                }
+                              } else if ('0' <= c && c <= '9') {
+                                if (first_char) {
+                                  first_char = false;
+                                  max = 0;
+                                } else if (max == 0) {
+                                  errored = true;
+                                  break;
+                                }
+                                max = 10 * max + (c - '0');
+                              }
+                            }
+                          }
+                          if (min == -1) {
+                            min = max;
+                          }
+                          if (max == -1 || min > max) {
+                            errored = true;
+                            break;
+                          }
+                          std::shared_ptr<std::set<int>> new_combination =
+                            std::make_shared<std::set<int>>();
+                          for (int times = min; times <= max; ++times) {
+                            for (auto&& it = combination->begin();
+                                        it != combination->end();
+                                        ++it) {
+                              int value = *it * times;
+                              if (new_combination->find(value) == new_combination->end()) {
+                                new_combination->insert(value);
+                              }
+                            }
+                          }
+                          combination = std::move(new_combination);
+                        } else {
+                          break;
+                        }
+                      } else {
+                        break;
+                      }
+                      ++index;
+                    }
+                    if (combination->find(0) != combination->end()) {
+                      nullable = true;
+                      combination->erase(0);
+                    }
+                    if (term->size() != 0 && combination->size() != 0) {
+                      token_id new_token_id = gen_id(id_to_token[subtree->token.id]);
+                      nts.insert(new_token_id);
+                      regexp_terms.emplace_back(std::move(term));
+                      regexp_combination.emplace_back(std::move(combination));
+                      regexp_nullable.push_back(nullable);
+                      regexp_infinitable.push_back(infinitable);
+                      regexp_head_ids.push_back(new_token_id);
+                      rule.push_back(new_token_id);
+                    }
+                  }
+                  add_rule(ret, head_id, std::move(rule));
+                }
+
+                while (!regexp_terms.empty()) {
+                  std::shared_ptr<std::vector<std::string>> term = regexp_terms.front();
+                  std::shared_ptr<std::set<int>> combination = regexp_combination.front();
+                  bool nullable = regexp_nullable.front();
+                  bool infinitable = regexp_infinitable.front();
+                  token_id regexp_head_id = regexp_head_ids.front();
+                  regexp_terms.pop_front();
+                  regexp_combination.pop_front();
+                  regexp_nullable.pop_front();
+                  regexp_infinitable.pop_front();
+                  regexp_head_ids.pop_front();
+
+                  if (!nullable &&
+                      !infinitable &&
+                      combination->size() == 1 &&
+                      combination->find(1) != combination->end() &&
+                      term->size() == 1) {
+                    std::string regexp = term->at(0);
                     std::array<bool, 256> contains{};
                     if (regexp == ".") {
                       for (std::size_t i = 0; i < 256; ++i) {
@@ -1110,7 +1249,7 @@ class context {
                         for (std::size_t i = 1; i < regexp_array.size() - 1; ++i) {
                           if (regexp_array[i] == '-') {
                             if (regexp_ranged[i - 1] != 0) {
-                              put_error_while_parse_regexp(regexp);
+                              put_error_while_parse_regexp(regexp_source);
                               errored = true;
                             }
                             regexp_ranged[i - 1] = 1;
@@ -1126,7 +1265,7 @@ class context {
                             char first = regexp_array[i - 1];
                             char last = regexp_array[i + 1];
                             if (first >= last) {
-                              put_error_while_parse_regexp(regexp);
+                              put_error_while_parse_regexp(regexp_source);
                               errored = true;
                             }
                             for (char c = first; c <= last; ++c) {
@@ -1137,33 +1276,97 @@ class context {
                       } else {
                         contains[static_cast<unsigned char>(regexp[0])] = true;
                       }
-                      for (std::size_t i = 0; i < 256; ++i) {
-                        if (contains[i]) {
-                          std::string token{};
-                          if (0x20 <= i && i <= 0x7E) {
-                            token.push_back('\'');
-                            token.push_back(static_cast<char>(i));
-                            token.push_back('\'');
-                          } else {
-                            token = "0x";
-                            token.push_back((i & 0xF0) >> 4);
-                            token.push_back(i & 0x0F);
-                          }
-                          token_id regex_token_id = get_id(token);
-                          if (unknown.find(regex_token_id) != unknown.end()) {
-                            unknown.erase(regex_token_id);
-                          }
-                          if (ts.find(regex_token_id) == ts.end()) {
-                            ts.insert(regex_token_id);
-                          }
-                          std::vector<token_id> rule{};
-                          rule.push_back(regex_token_id);
-                          add_rule(ret, head_id, std::move(rule));
+                    }
+                    for (std::size_t i = 0; i < 256; ++i) {
+                      if (contains[i]) {
+                        std::string token{};
+                        if (0x20 <= i && i <= 0x7E) {
+                          token.push_back('\'');
+                          token.push_back(static_cast<char>(i));
+                          token.push_back('\'');
+                        } else {
+                          token = "0x";
+                          token.push_back((i & 0xF0) >> 4);
+                          token.push_back(i & 0x0F);
                         }
+                        token_id regex_token_id = get_id(token);
+                        if (unknown.find(regex_token_id) != unknown.end()) {
+                          unknown.erase(regex_token_id);
+                        }
+                        if (ts.find(regex_token_id) == ts.end()) {
+                          ts.insert(regex_token_id);
+                        }
+                        std::vector<token_id> rule{};
+                        rule.push_back(regex_token_id);
+                        add_rule(ret, regexp_head_id, std::move(rule));
                       }
                     }
+                  } else {
+                    if (nullable) {
+                      token_id new_token_id = gen_id(id_to_token[subtree->token.id]);
+                      nts.insert(new_token_id);
+                      std::vector<token_id> rule{};
+                      rule.push_back(new_token_id);
+                      if (infinitable) {
+                        rule.push_back(regexp_head_id);
+                      }
+                      add_rule(ret, regexp_head_id, std::move(rule));
+                      add_rule(ret, regexp_head_id, std::vector<token_id>());
+                      regexp_terms.emplace_back(std::move(term));
+                      regexp_combination.emplace_back(std::move(combination));
+                      regexp_nullable.push_back(false);
+                      regexp_infinitable.push_back(false);
+                      regexp_head_ids.push_back(new_token_id);
+                    } else if (infinitable) {
+                      token_id new_token_id = gen_id(id_to_token[subtree->token.id]);
+                      nts.insert(new_token_id);
+                      token_id new_token_id_2 = gen_id(id_to_token[subtree->token.id]);
+                      nts.insert(new_token_id_2);
+                      std::vector<token_id> rule{};
+                      rule.push_back(new_token_id);
+                      rule.push_back(new_token_id_2);
+                      add_rule(ret, regexp_head_id, std::move(rule));
+                      rule.clear();
+                      rule.push_back(new_token_id);
+                      rule.push_back(new_token_id_2);
+                      add_rule(ret, new_token_id_2, std::move(rule));
+                      add_rule(ret, new_token_id_2, std::vector<token_id>());
+                      regexp_terms.emplace_back(std::move(term));
+                      regexp_combination.emplace_back(std::move(combination));
+                      regexp_nullable.push_back(false);
+                      regexp_infinitable.push_back(false);
+                      regexp_head_ids.push_back(new_token_id);
+                    } else {
+                      token_id new_token_id = gen_id(id_to_token[subtree->token.id]);
+                      nts.insert(new_token_id);
+                      token_id new_token_id_break = gen_id(id_to_token[subtree->token.id]);
+                      nts.insert(new_token_id_break);
+                      int count = 0;
+                      bool first = true;
+                      for (auto&& it = combination->begin(); it != combination->end(); ++it) {
+                        std::vector<token_id> rule{};
+                        while (count < *it) {
+                          rule.push_back(new_token_id_break);
+                          count++;
+                        }
+                        token_id new_token_id_2 = gen_id(id_to_token[id]);
+                        nts.insert(new_token_id_2);
+                        rule.push_back(new_token_id_2);
+                        add_rule(ret, regexp_head_id, std::move(rule));
+                        if (first) {
+                          first = false;
+                        } else {
+                          add_rule(ret, regexp_head_id, std::vector<token_id>());
+                        }
+                        regexp_head_id = new_token_id_2;
+                      }
+                      regexp_terms.emplace_back(std::move(term));
+                      regexp_combination.emplace_back(std::make_shared<std::set<int>>());
+                      regexp_nullable.push_back(false);
+                      regexp_infinitable.push_back(false);
+                      regexp_head_ids.push_back(new_token_id);
+                    }
                   }
-                } else {
                 }
                 break;
               }
@@ -1248,6 +1451,10 @@ class context {
                       }
                     }
                   }
+                  if (combination.find(0) != combination.end()) {
+                    nullable = true;
+                    combination.erase(0);
+                  }
                   if (!nullable &&
                       !infinitable &&
                       combination.size() == 1 &&
@@ -1264,8 +1471,8 @@ class context {
                         new_token_id_2 = body_main_term->token.id;
                       } else {
                         new_token_id_2 = gen_id(id_to_token[id]);
+                        nts.insert(new_token_id_2);
                       }
-                      nts.insert(new_token_id_2);
                       std::vector<token_id> new_rule{};
                       new_rule.push_back(new_token_id_2);
                       if (infinitable) {
@@ -1287,8 +1494,8 @@ class context {
                         new_token_id_break = body_main_term->token.id;
                       } else {
                         new_token_id_break = gen_id(id_to_token[id]);
+                        nts.insert(new_token_id_break);
                       }
-                      nts.insert(new_token_id_break);
                       int count = 0;
                       bool first = true;
                       for (auto&& it = combination.begin(); it != combination.end(); ++it) {

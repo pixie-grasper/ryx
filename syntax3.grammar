@@ -1,0 +1,25 @@
+%
+  ID
+  NUM
+;
+
+input = syntax*
+      ;
+
+syntax = ID '=' body_list ';'
+       | '%' ID* ';'
+       ;
+
+body_list = body? ('|' body?)*
+          ;
+
+body = '(' body_list ')' body_opt*
+     | ID body_opt*
+     ;
+
+body_opt = '?'
+         | '+'
+         | '*'
+         | '{' NUM (',' NUM)? '}'
+         ;
+

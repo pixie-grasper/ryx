@@ -311,6 +311,25 @@ class context {
         case ',':
           return token(token_kind::comma);
 
+        case '\'': {
+          std::string token_string{};
+
+          ch = is->get();
+          while (ch != EOF && ch != '\'') {
+            token_string.push_back(static_cast<char>(ch));
+            if (ch == '\\') {
+              token_string.push_back(static_cast<char>(is->get()));
+            }
+            ch = is->get();
+          }
+
+          if (token_string.size() == 0) {
+            continue;
+          } else {
+            return token(token_kind::id, get_id('\'' + token_string + '\''));
+          }
+        }
+
         default: {
           std::string token_string{};
           bool number = true;
@@ -969,6 +988,18 @@ class context {
 
                       default:
                         break;
+                    }
+                  }
+                  if (body_internal->subtree[0]->token.kind == token_kind::id) {
+                    if (ts.find(body_internal->subtree[0]->token.id) == ts.end() && nts.find(body_internal->subtree[0]->token.id) == nts.end()) {
+                      if (id_to_token[body_internal->subtree[0]->token.id][0] == '\'') {
+                        if (unknown.find(body_internal->subtree[0]->token.id) != unknown.end()) {
+                          unknown.erase(body_internal->subtree[0]->token.id);
+                        }
+                        ts.insert(body_internal->subtree[0]->token.id);
+                      } else if (unknown.find(body_internal->subtree[0]->token.id) == unknown.end()) {
+                        unknown.insert(body_internal->subtree[0]->token.id);
+                      }
                     }
                   }
                   if (!nullable &&

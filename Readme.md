@@ -33,7 +33,7 @@ body_list = body* ('|' body*)*
           ;
 
 body = '(' body_list ')' body_opt*
-     | ID body_opt*
+     | (ID | REGEXP) body_opt*
      ;
 
 body_opt = /[?+*]/

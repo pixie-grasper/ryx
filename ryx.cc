@@ -153,7 +153,7 @@ class context {
   shared_syntax_tree parsed_input;
 
   std::istream* is;
-  bool verbose, quiet, table;
+  bool verbose, quiet, table, sure_partial_book;
   bool parsed, checked, ll1p;
   int lr, ln;
   int genid;
@@ -1859,9 +1859,10 @@ class context {
     }
 
     bool booked = false;
+    bool partial_booked = false;
     for (auto&& it = work->first.begin(); it != work->first.end(); ++it) {
-      rule_id rule_id = it->first;
-      token_id stack_token_id = work->rules[rule_id].first;
+      rule_id rid = it->first;
+      token_id stack_token_id = work->rules[rid].first;
 
       if (work->ts.find(stack_token_id) == work->ts.end()) {
         bool has_epsilon = false;
@@ -1872,10 +1873,23 @@ class context {
           if (input_token_id == eid) {
             has_epsilon = true;
           } else if (work->table[stack_token_id][input_token_id] == empty_rule_id) {
-            work->table[stack_token_id][input_token_id] = rule_id;
+            work->table[stack_token_id][input_token_id] = rid;
           } else {
             booked = true;
+            rule_id old_rule_id = work->table[stack_token_id][input_token_id];
             work->table[stack_token_id][input_token_id] = booked_rule_id;
+            if (sure_partial_book) {
+              if (work->first[rid].find(eid) != work->first[rid].end()) {
+                booked = false;
+                partial_booked = true;
+                work->table[stack_token_id][input_token_id] = old_rule_id;
+              } else if (work->first[old_rule_id].find(eid) !=
+                         work->first[old_rule_id].end()) {
+                booked = false;
+                partial_booked = true;
+                work->table[stack_token_id][input_token_id] = rid;
+              }
+            }
           }
         }
 
@@ -1885,10 +1899,23 @@ class context {
                       ++input_token) {
             token_id input_token_id = *input_token;
             if (work->table[stack_token_id][input_token_id] == empty_rule_id) {
-              work->table[stack_token_id][input_token_id] = rule_id;
-            } else if (work->table[stack_token_id][input_token_id] != rule_id) {
+              work->table[stack_token_id][input_token_id] = rid;
+            } else if (work->table[stack_token_id][input_token_id] != rid) {
               booked = true;
+              rule_id old_rule_id = work->table[stack_token_id][input_token_id];
               work->table[stack_token_id][input_token_id] = booked_rule_id;
+              if (sure_partial_book) {
+                if (work->first[rid].find(eid) != work->first[rid].end()) {
+                  booked = false;
+                  partial_booked = true;
+                  work->table[stack_token_id][input_token_id] = old_rule_id;
+                } else if (work->first[old_rule_id].find(eid) !=
+                           work->first[old_rule_id].end()) {
+                  booked = false;
+                  partial_booked = true;
+                  work->table[stack_token_id][input_token_id] = rid;
+                }
+              }
             }
           }
         }
@@ -1984,6 +2011,11 @@ class context {
       }
     }
 
+    if (!quiet && partial_booked) {
+      put_warning();
+      std::cout << "partial booked." << std::endl;
+    }
+
     if (booked) {
       return false;
     } else {
@@ -2066,24 +2098,23 @@ class context {
     return ll1p;
   }
 
-  void set_verbose(bool x = true) {
-    verbose = x;
-    if (verbose) {
-      quiet = false;
-    }
+  void set_verbose(void) {
+    verbose = true;
     return;
   }
 
-  void set_quiet(bool x = true) {
-    quiet = x;
-    if (quiet) {
-      verbose = false;
-    }
+  void set_quiet(void) {
+    quiet = true;
     return;
   }
 
-  void set_table(bool x = true) {
-    table = x;
+  void set_table(void) {
+    table = true;
+    return;
+  }
+
+  void ensure_partial_book(void) {
+    sure_partial_book = true;
     return;
   }
 };
@@ -2096,16 +2127,19 @@ int main(int argc, char** argv) {
   bool verbose = false;
   bool quiet = false;
   bool table = false;
+  bool sure_partial_book = false;
   for (int i = 1; i < argc; ++i) {
     if (argv[i][0] == '-') {
-      if (argv[i][1] == 'v') {
-        verbose = true;
-        quiet = false;
-      } else if (argv[i][1] == 'q') {
-        verbose = false;
-        quiet = true;
-      } else if (argv[i][1] == 't') {
-        table = true;
+      for (std::size_t j = 1; argv[i][j] != '\0'; ++j) {
+        if (argv[i][j] == 'v') {
+          verbose = true;
+        } else if (argv[i][j] == 'q') {
+          quiet = true;
+        } else if (argv[i][j] == 't') {
+          table = true;
+        } else if (argv[i][j] == 'p') {
+          sure_partial_book = true;
+        }
       }
     } else {
       filename = argv[i];
@@ -2125,12 +2159,15 @@ int main(int argc, char** argv) {
 
   if (verbose) {
     c->set_verbose();
-  } else if (quiet) {
+  }
+  if (quiet) {
     c->set_quiet();
   }
-
   if (table) {
     c->set_table();
+  }
+  if (sure_partial_book) {
+    c->ensure_partial_book();
   }
 
   if (c->is_ll1()) {

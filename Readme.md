@@ -19,6 +19,30 @@ $ cd ryx
 $ make
 ```
 
+## Syntax
+
+```
+input = syntax*
+      ;
+
+syntax = ID IS body_list END
+       | TOKENLIST ID* END
+       ;
+
+body_list = body? (OR body?)*
+          ;
+
+body = LPAREN body_list RPAREN body_opt*
+     | ID body_opt*
+     ;
+
+body_opt = QUESTION
+         | PLUS
+         | STAR
+         | LCURL NUM (COMMA NUM)? RCURL
+         ;
+```
+
 ## TODO
 
 - Generate codes

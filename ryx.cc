@@ -75,32 +75,89 @@ class context {
   using rule_id = std::size_t;
 
   enum class token_kind {
-    // non-termminals
+    /* internal symbols */
     end_of_file = 0,
     begin_rule,
     end_of_body,
     invalid,
-    input,
-    syntax_list,
-    syntax,
-    body_list,
-    body_list_rest,
-    body,
-    body_internal,
-    body_opt_list,
-    body_opt,
-    range,
-    range_rest_opt,
-    id_list,
 
-    // terminals
+    /* non-terminate symbols */
+    // input = syntax
+    //       ;
+    input,
+
+    // syntax = syntax_ syntax
+    //        |
+    //        ;
+    syntax,
+
+    // syntax_ = id eq body_list semicolon
+    //         | percent id_ semicolon
+    //         ;
+    syntax_,
+
+    // body_list = body_internal body_list_
+    //           ;
+    body_list,
+
+    // body_list_ = bar body_internal body_list_
+    //            |
+    //            ;
+    body_list_,
+
+    // body_internal = comma_ body body_internal
+    //               |
+    //               ;
+    body_internal,
+
+    // body = '(' body_list ')' body_opt
+    //      | id_or_regexp body_opt
+    body,
+
+    // body_opt = body_opt_ body_opt
+    //          |
+    //          ;
+    body_opt,
+
+    // body_opt_ = '?'
+    //           | '+'
+    //           | '*'
+    //           | '{' range '}'
+    //           ;
+    body_opt_,
+
+    // range = NUM range_
+    //       ;
+    range,
+
+    // range_ = ',' NUM
+    //        |
+    //        ;
+    range_,
+
+    // id_ = id id_
+    //     |
+    //     ;
+    id_,
+
+    // comma_ = commma
+    //        |
+    //        ;
+    comma_,
+
+    // id_or_regexp = ID
+    //              | REGEXP
+    //              ;
+    id_or_regexp,
+
+    /* terminate symbols */
     id,
     num,
     regexp,
-    is,
-    or_,
-    end,
-    tokenlist,
+    eq,
+    bar,
+    semicolon,
+    percent,
     lparen,
     rparen,
     lcurl,
@@ -109,6 +166,7 @@ class context {
     plus,
     star,
     comma,
+    period,
   };
 
   struct token {
@@ -135,6 +193,16 @@ class context {
   };
 
   using shared_syntax_tree = std::shared_ptr<syntax_tree>;
+
+  struct continuation {
+    token_id head_id, base_id;
+    std::shared_ptr<std::vector<token_id>> rule;
+    shared_syntax_tree body_internal, body_list_;
+
+    continuation() = default;
+  };
+
+  using shared_continuation = std::shared_ptr<continuation>;
 
   struct working_memory {
     std::unordered_map<rule_id, std::pair<token_id, std::vector<token_id>>> rules;
@@ -259,17 +327,38 @@ class context {
           continue;
         } else {
           std::string token_string{};
-          token_string.push_back('\'');
-          token_string.push_back(static_cast<char>(ch));
-          if (ch == '\\') {
-            ch = is->get();
-            if (ch == EOF) {
-              put_error_while_get_token();
-              return token(token_kind::invalid);
-            }
+          if (0x20 <= ch && ch <= 0x7E && ch != '\\') {
+            token_string.push_back('\'');
             token_string.push_back(static_cast<char>(ch));
+            token_string.push_back('\'');
+          } else if (ch == '\\') {
+            ch = is->get();
+            switch (ch) {
+              case 'n':
+                token_string = "0x0A";
+                break;
+
+              case 'r':
+                token_string = "0x0D";
+                break;
+
+              case 's':
+                token_string = "' '";
+                break;
+
+              case 't':
+                token_string = "0x09";
+                break;
+
+              default:
+                put_error_while_get_token();
+                return token(token_kind::invalid);
+            }
+          } else {
+            token_string = "0x";
+            token_string.push_back(itoh((ch & 0xF0) >> 4));
+            token_string.push_back(itoh(ch & 0x0F));
           }
-          token_string.push_back('\'');
           return token(token_kind::id, get_id(std::move(token_string)));
         }
       }
@@ -308,16 +397,16 @@ class context {
           continue;
 
         case '=':
-          return token(token_kind::is);
+          return token(token_kind::eq);
 
         case '|':
-          return token(token_kind::or_);
+          return token(token_kind::bar);
 
         case ';':
-          return token(token_kind::end);
+          return token(token_kind::semicolon);
 
         case '%':
-          return token(token_kind::tokenlist);
+          return token(token_kind::percent);
 
         case '(':
           return token(token_kind::lparen);
@@ -342,6 +431,9 @@ class context {
 
         case ',':
           return token(token_kind::comma);
+
+        case '.':
+          return token(token_kind::period);
 
         case '/': {
           std::string token_string{};
@@ -468,34 +560,37 @@ class context {
             i--;
             break;
 
-          case token_kind::end_of_file:     std::cout << "$";               break;
-          case token_kind::input:           std::cout << "input";           break;
-          case token_kind::syntax_list:     std::cout << "syntax-list";     break;
-          case token_kind::syntax:          std::cout << "syntax";          break;
-          case token_kind::body_list:       std::cout << "body-list";       break;
-          case token_kind::body_list_rest:  std::cout << "body-list-rest";  break;
-          case token_kind::body:            std::cout << "body";            break;
-          case token_kind::body_internal:   std::cout << "body-internal";   break;
-          case token_kind::body_opt_list:   std::cout << "body-opt-list";   break;
-          case token_kind::body_opt:        std::cout << "body-opt";        break;
-          case token_kind::range:           std::cout << "range";           break;
-          case token_kind::range_rest_opt:  std::cout << "range-rest-opt";  break;
-          case token_kind::id_list:         std::cout << "id-list";         break;
-          case token_kind::id:              std::cout << "ID";              break;
-          case token_kind::regexp:          std::cout << "REGEXP";          break;
-          case token_kind::num:             std::cout << "NUM";             break;
-          case token_kind::is:              std::cout << "=";               break;
-          case token_kind::or_:             std::cout << "|";               break;
-          case token_kind::end:             std::cout << ";";               break;
-          case token_kind::tokenlist:       std::cout << "%";               break;
-          case token_kind::lparen:          std::cout << "(";               break;
-          case token_kind::rparen:          std::cout << ")";               break;
-          case token_kind::lcurl:           std::cout << "{";               break;
-          case token_kind::rcurl:           std::cout << "}";               break;
-          case token_kind::question:        std::cout << "?";               break;
-          case token_kind::plus:            std::cout << "+";               break;
-          case token_kind::star:            std::cout << "*";               break;
-          case token_kind::comma:           std::cout << ",";               break;
+          case token_kind::end_of_file:     std::cout << "$";                 break;
+          case token_kind::input:           std::cout << "input";             break;
+          case token_kind::syntax:          std::cout << "syntax";            break;
+          case token_kind::syntax_:         std::cout << "syntax~";           break;
+          case token_kind::body_list:       std::cout << "body-list";         break;
+          case token_kind::body_list_:      std::cout << "body-list~";        break;
+          case token_kind::body_internal:   std::cout << "body-internal";     break;
+          case token_kind::body:            std::cout << "body";              break;
+          case token_kind::body_opt:        std::cout << "body-opt";          break;
+          case token_kind::body_opt_:       std::cout << "body-opt~";         break;
+          case token_kind::range:           std::cout << "range";             break;
+          case token_kind::range_:          std::cout << "range~";            break;
+          case token_kind::id_:             std::cout << "id~";               break;
+          case token_kind::comma_:          std::cout << "comma~";            break;
+          case token_kind::id_or_regexp:    std::cout << "id-or-regexp";      break;
+          case token_kind::id:              std::cout << "ID";                break;
+          case token_kind::regexp:          std::cout << "REGEXP";            break;
+          case token_kind::num:             std::cout << "NUM";               break;
+          case token_kind::eq:              std::cout << "=";                 break;
+          case token_kind::bar:             std::cout << "|";                 break;
+          case token_kind::semicolon:       std::cout << ";";                 break;
+          case token_kind::percent:         std::cout << "%";                 break;
+          case token_kind::lparen:          std::cout << "(";                 break;
+          case token_kind::rparen:          std::cout << ")";                 break;
+          case token_kind::lcurl:           std::cout << "{";                 break;
+          case token_kind::rcurl:           std::cout << "}";                 break;
+          case token_kind::question:        std::cout << "?";                 break;
+          case token_kind::plus:            std::cout << "+";                 break;
+          case token_kind::star:            std::cout << "*";                 break;
+          case token_kind::comma:           std::cout << ",";                 break;
+          case token_kind::period:          std::cout << ".";                 break;
         }
         stack.pop_back();
       }
@@ -522,10 +617,10 @@ class context {
           case token_kind::num:         std::cout << id_to_token[t.id]; break;
           case token_kind::regexp:      std::cout << id_to_token[t.id]; break;
           case token_kind::end_of_file: std::cout << "$"; break;
-          case token_kind::is:          std::cout << "="; break;
-          case token_kind::or_:         std::cout << "|"; break;
-          case token_kind::end:         std::cout << ";"; break;
-          case token_kind::tokenlist:   std::cout << "%"; break;
+          case token_kind::eq:          std::cout << "="; break;
+          case token_kind::bar:         std::cout << "|"; break;
+          case token_kind::semicolon:   std::cout << ";"; break;
+          case token_kind::percent:     std::cout << "%"; break;
           case token_kind::lparen:      std::cout << "("; break;
           case token_kind::rparen:      std::cout << ")"; break;
           case token_kind::lcurl:       std::cout << "{"; break;
@@ -534,6 +629,7 @@ class context {
           case token_kind::plus:        std::cout << "+"; break;
           case token_kind::star:        std::cout << "*"; break;
           case token_kind::comma:       std::cout << ","; break;
+          case token_kind::period:      std::cout << ","; break;
           default:                                        break;
         }
       }
@@ -587,37 +683,12 @@ class context {
           node->subtree.back()->token = token(token_kind::input);
           switch (t.kind) {
             case token_kind::id:
-            case token_kind::tokenlist:
+            case token_kind::percent:
             case token_kind::end_of_file:
               stack.pop_back();
               stack.push_back(token_kind::end_of_body);
-              stack.push_back(token_kind::syntax_list);
-              node = node->subtree.back();
-              break;
-
-            default:
-              put_error_while_parse(stack, t);
-              ret = nullptr;
-              end = true;
-              break;
-          }
-          break;
-
-        case token_kind::syntax_list:
-          node->subtree.push_back(std::make_shared<syntax_tree>(node));
-          node->subtree.back()->token = token(token_kind::syntax_list);
-          switch (t.kind) {
-            case token_kind::id:
-            case token_kind::tokenlist:
-              stack.pop_back();
-              stack.push_back(token_kind::end_of_body);
-              stack.push_back(token_kind::syntax_list);
               stack.push_back(token_kind::syntax);
               node = node->subtree.back();
-              break;
-
-            case token_kind::end_of_file:
-              stack.pop_back();
               break;
 
             default:
@@ -633,21 +704,46 @@ class context {
           node->subtree.back()->token = token(token_kind::syntax);
           switch (t.kind) {
             case token_kind::id:
+            case token_kind::percent:
               stack.pop_back();
               stack.push_back(token_kind::end_of_body);
-              stack.push_back(token_kind::end);
+              stack.push_back(token_kind::syntax);
+              stack.push_back(token_kind::syntax_);
+              node = node->subtree.back();
+              break;
+
+            case token_kind::end_of_file:
+              stack.pop_back();
+              break;
+
+            default:
+              put_error_while_parse(stack, t);
+              ret = nullptr;
+              end = true;
+              break;
+          }
+          break;
+
+        case token_kind::syntax_:
+          node->subtree.push_back(std::make_shared<syntax_tree>(node));
+          node->subtree.back()->token = token(token_kind::syntax_);
+          switch (t.kind) {
+            case token_kind::id:
+              stack.pop_back();
+              stack.push_back(token_kind::end_of_body);
+              stack.push_back(token_kind::semicolon);
               stack.push_back(token_kind::body_list);
-              stack.push_back(token_kind::is);
+              stack.push_back(token_kind::eq);
               stack.push_back(token_kind::id);
               node = node->subtree.back();
               break;
 
-            case token_kind::tokenlist:
+            case token_kind::percent:
               stack.pop_back();
               stack.push_back(token_kind::end_of_body);
-              stack.push_back(token_kind::end);
-              stack.push_back(token_kind::id_list);
-              stack.push_back(token_kind::tokenlist);
+              stack.push_back(token_kind::semicolon);
+              stack.push_back(token_kind::id_);
+              stack.push_back(token_kind::percent);
               node = node->subtree.back();
               break;
 
@@ -665,14 +761,15 @@ class context {
           switch (t.kind) {
             case token_kind::id:
             case token_kind::regexp:
-            case token_kind::end:
-            case token_kind::or_:
+            case token_kind::semicolon:
+            case token_kind::bar:
             case token_kind::lparen:
             case token_kind::rparen:
+            case token_kind::comma:
               stack.pop_back();
               stack.push_back(token_kind::end_of_body);
-              stack.push_back(token_kind::body_list_rest);
-              stack.push_back(token_kind::body);
+              stack.push_back(token_kind::body_list_);
+              stack.push_back(token_kind::body_internal);
               node = node->subtree.back();
               break;
 
@@ -684,20 +781,50 @@ class context {
           }
           break;
 
-        case token_kind::body_list_rest:
+        case token_kind::body_list_:
           node->subtree.push_back(std::make_shared<syntax_tree>(node));
-          node->subtree.back()->token = token(token_kind::body_list_rest);
+          node->subtree.back()->token = token(token_kind::body_list_);
           switch (t.kind) {
-            case token_kind::or_:
+            case token_kind::bar:
               stack.pop_back();
               stack.push_back(token_kind::end_of_body);
-              stack.push_back(token_kind::body_list_rest);
-              stack.push_back(token_kind::body);
-              stack.push_back(token_kind::or_);
+              stack.push_back(token_kind::body_list_);
+              stack.push_back(token_kind::body_internal);
+              stack.push_back(token_kind::bar);
               node = node->subtree.back();
               break;
 
-            case token_kind::end:
+            case token_kind::semicolon:
+            case token_kind::rparen:
+              stack.pop_back();
+              break;
+
+            default:
+              put_error_while_parse(stack, t);
+              ret = nullptr;
+              end = true;
+              break;
+          }
+          break;
+
+        case token_kind::body_internal:
+          node->subtree.push_back(std::make_shared<syntax_tree>(node));
+          node->subtree.back()->token = token(token_kind::body_internal);
+          switch (t.kind) {
+            case token_kind::id:
+            case token_kind::regexp:
+            case token_kind::lparen:
+            case token_kind::comma:
+              stack.pop_back();
+              stack.push_back(token_kind::end_of_body);
+              stack.push_back(token_kind::body_internal);
+              stack.push_back(token_kind::body);
+              stack.push_back(token_kind::comma_);
+              node = node->subtree.back();
+              break;
+
+            case token_kind::bar:
+            case token_kind::semicolon:
             case token_kind::rparen:
               stack.pop_back();
               break;
@@ -716,52 +843,17 @@ class context {
           switch (t.kind) {
             case token_kind::id:
             case token_kind::regexp:
-            case token_kind::lparen:
               stack.pop_back();
               stack.push_back(token_kind::end_of_body);
-              stack.push_back(token_kind::body);
-              stack.push_back(token_kind::body_internal);
-              node = node->subtree.back();
-              break;
-
-            case token_kind::end:
-            case token_kind::or_:
-            case token_kind::rparen:
-              stack.pop_back();
-              break;
-
-            default:
-              put_error_while_parse(stack, t);
-              ret = nullptr;
-              end = true;
-              break;
-          }
-          break;
-
-        case token_kind::body_internal:
-          node->subtree.push_back(std::make_shared<syntax_tree>(node));
-          node->subtree.back()->token = token(token_kind::body_internal);
-          switch (t.kind) {
-            case token_kind::id:
-              stack.pop_back();
-              stack.push_back(token_kind::end_of_body);
-              stack.push_back(token_kind::body_opt_list);
-              stack.push_back(token_kind::id);
-              node = node->subtree.back();
-              break;
-
-            case token_kind::regexp:
-              stack.pop_back();
-              stack.push_back(token_kind::end_of_body);
-              stack.push_back(token_kind::body_opt_list);
-              stack.push_back(token_kind::regexp);
+              stack.push_back(token_kind::body_opt);
+              stack.push_back(token_kind::id_or_regexp);
               node = node->subtree.back();
               break;
 
             case token_kind::lparen:
               stack.pop_back();
               stack.push_back(token_kind::end_of_body);
-              stack.push_back(token_kind::body_opt_list);
+              stack.push_back(token_kind::body_opt);
               stack.push_back(token_kind::rparen);
               stack.push_back(token_kind::body_list);
               stack.push_back(token_kind::lparen);
@@ -776,9 +868,9 @@ class context {
           }
           break;
 
-        case token_kind::body_opt_list:
+        case token_kind::body_opt:
           node->subtree.push_back(std::make_shared<syntax_tree>(node));
-          node->subtree.back()->token = token(token_kind::body_opt_list);
+          node->subtree.back()->token = token(token_kind::body_opt);
           switch (t.kind) {
             case token_kind::question:
             case token_kind::plus:
@@ -786,17 +878,18 @@ class context {
             case token_kind::lcurl:
               stack.pop_back();
               stack.push_back(token_kind::end_of_body);
-              stack.push_back(token_kind::body_opt_list);
               stack.push_back(token_kind::body_opt);
+              stack.push_back(token_kind::body_opt_);
               node = node->subtree.back();
               break;
 
-            case token_kind::lparen:
-            case token_kind::rparen:
             case token_kind::id:
             case token_kind::regexp:
-            case token_kind::end:
-            case token_kind::or_:
+            case token_kind::semicolon:
+            case token_kind::lparen:
+            case token_kind::rparen:
+            case token_kind::bar:
+            case token_kind::comma:
               stack.pop_back();
               break;
 
@@ -808,9 +901,9 @@ class context {
           }
           break;
 
-        case token_kind::body_opt:
+        case token_kind::body_opt_:
           node->subtree.push_back(std::make_shared<syntax_tree>(node));
-          node->subtree.back()->token = token(token_kind::body_opt);
+          node->subtree.back()->token = token(token_kind::body_opt_);
           switch (t.kind) {
             case token_kind::question:
               stack.pop_back();
@@ -857,7 +950,7 @@ class context {
             case token_kind::num:
               stack.pop_back();
               stack.push_back(token_kind::end_of_body);
-              stack.push_back(token_kind::range_rest_opt);
+              stack.push_back(token_kind::range_);
               stack.push_back(token_kind::num);
               node = node->subtree.back();
               break;
@@ -870,9 +963,9 @@ class context {
           }
           break;
 
-        case token_kind::range_rest_opt:
+        case token_kind::range_:
           node->subtree.push_back(std::make_shared<syntax_tree>(node));
-          node->subtree.back()->token = token(token_kind::range_rest_opt);
+          node->subtree.back()->token = token(token_kind::range_);
           switch (t.kind) {
             case token_kind::rcurl:
               stack.pop_back();
@@ -894,20 +987,71 @@ class context {
           }
           break;
 
-        case token_kind::id_list:
+        case token_kind::id_:
           node->subtree.push_back(std::make_shared<syntax_tree>(node));
-          node->subtree.back()->token = token(token_kind::id_list);
+          node->subtree.back()->token = token(token_kind::id_);
           switch (t.kind) {
             case token_kind::id:
               stack.pop_back();
               stack.push_back(token_kind::end_of_body);
-              stack.push_back(token_kind::id_list);
+              stack.push_back(token_kind::id_);
               stack.push_back(token_kind::id);
               node = node->subtree.back();
               break;
 
-            case token_kind::end:
+            case token_kind::semicolon:
               stack.pop_back();
+              break;
+
+            default:
+              put_error_while_parse(stack, t);
+              ret = nullptr;
+              end = true;
+              break;
+          }
+          break;
+
+        case token_kind::comma_:
+          node->subtree.push_back(std::make_shared<syntax_tree>(node));
+          node->subtree.back()->token = token(token_kind::comma_);
+          switch (t.kind) {
+            case token_kind::comma:
+              stack.pop_back();
+              stack.push_back(token_kind::end_of_body);
+              stack.push_back(token_kind::comma);
+              node = node->subtree.back();
+              break;
+
+            case token_kind::id:
+            case token_kind::regexp:
+            case token_kind::lparen:
+              stack.pop_back();
+              break;
+
+            default:
+              put_error_while_parse(stack, t);
+              ret = nullptr;
+              end = true;
+              break;
+          }
+          break;
+
+        case token_kind::id_or_regexp:
+          node->subtree.push_back(std::make_shared<syntax_tree>(node));
+          node->subtree.back()->token = token(token_kind::id_or_regexp);
+          switch (t.kind) {
+            case token_kind::id:
+              stack.pop_back();
+              stack.push_back(token_kind::end_of_body);
+              stack.push_back(token_kind::id);
+              node = node->subtree.back();
+              break;
+
+            case token_kind::regexp:
+              stack.pop_back();
+              stack.push_back(token_kind::end_of_body);
+              stack.push_back(token_kind::regexp);
+              node = node->subtree.back();
               break;
 
             default:
@@ -959,611 +1103,288 @@ class context {
   }
 
   shared_working_memory rule_list_from_syntax_tree(const shared_syntax_tree& tree) {
-    std::unordered_set<token_id> ts{}, nts{}, unknown{};
-    shared_syntax_tree syntax_list = tree->subtree[0]->subtree[0];
+    shared_syntax_tree syntax = tree->subtree[0]->subtree[0];
     shared_working_memory ret = std::make_shared<working_memory>();
     bool errored = false;
 
-    while (!syntax_list->subtree.empty() && !errored) {
-      shared_syntax_tree syntax = syntax_list->subtree[0];
-      syntax_list = syntax_list->subtree[1];
-      if (syntax->subtree[0]->token.kind == token_kind::tokenlist) {
-        shared_syntax_tree id_list = syntax->subtree[1];
-        while (!id_list->subtree.empty() && !errored) {
-          token_id id = id_list->subtree[0]->token.id;
-          id_list = id_list->subtree[1];
-          if (ts.find(id) != ts.end()) {
-            if (!quiet) {
-              put_warning();
-              std::cout << "token '"
-                        << id_to_token[id]
-                        << "' is already registered as a terminate symbol."
-                        << std::endl;
-            }
-          } else if (nts.find(id) != nts.end()) {
-            put_error();
-            std::cout << "token '"
-                      << id_to_token[id]
-                      << "' is already registered as a NON-TERMINATE symbol."
-                      << std::endl;
-            errored = true;
-          } else {
-            if (unknown.find(id) != unknown.end()) {
-              unknown.erase(id);
-            }
-            ts.insert(id);
-          }
-        }
+    // split rule-definitions and terminate-symbol-definitions
+    std::vector<shared_syntax_tree> define_rule{};
+    std::vector<shared_syntax_tree> define_ts{};
+    while (!syntax->subtree.empty()) {
+      shared_syntax_tree syntax_ = syntax->subtree[0];
+      syntax = syntax->subtree[1];
+      if (syntax_->subtree[0]->token.kind == token_kind::id) {
+        define_rule.emplace_back(std::move(syntax_));
       } else {
-        token_id id = syntax->subtree[0]->token.id;
-        if (ts.find(id) != ts.end()) {
+        define_ts.emplace_back(std::move(syntax_));
+      }
+    }
+
+    // register symbols
+    std::unordered_set<token_id> ts{}, nts{}, unknown{};
+    for (std::size_t i = 0; i < define_rule.size(); ++i) {
+      token_id head_id = define_rule[i]->subtree[0]->token.id;
+      if (nts.find(head_id) == nts.end()) {
+        nts.insert(head_id);
+      }
+    }
+    for (std::size_t i = 0; i < define_ts.size(); ++i) {
+      shared_syntax_tree id_ = define_ts[i]->subtree[1];
+      while (!id_->subtree.empty()) {
+        token_id ts_id = id_->subtree[0]->token.id;
+        id_ = id_->subtree[1];
+        if (nts.find(ts_id) != nts.end()) {
           put_error();
           std::cout << "token '"
-                    << id_to_token[id]
-                    << "' is already registered as a TERMINATE symbol."
+                    << id_to_token[ts_id]
+                    << "' is already registered as a NON-TERMINATE symbol."
                     << std::endl;
           errored = true;
+        } else if (ts.find(ts_id) != ts.end()) {
+          if (!quiet) {
+            put_warning();
+            std::cout << "token '"
+                      << id_to_token[ts_id]
+                      << "' is already registered as a terminate symbol."
+                      << std::endl;
+          }
         } else {
-          if (nts.find(id) == nts.end()) {
-            nts.insert(id);
-          }
-          if (unknown.find(id) != unknown.end()) {
-            unknown.erase(id);
-          }
-          std::list<std::pair<token_id, shared_syntax_tree>> queue{};
-          queue.emplace_front(std::make_pair(id, syntax->subtree[2]));
-          while (!queue.empty()) {
-            token_id head_id = queue.back().first;
-            shared_syntax_tree subtree = queue.back().second;
-            queue.pop_back();
-            switch (subtree->token.kind) {
-              case token_kind::body_list:
-                queue.emplace_front(head_id, subtree->subtree[0]);
-                queue.emplace_front(head_id, subtree->subtree[1]);
-                break;
+          ts.insert(ts_id);
+        }
+      }
+    }
+    if (errored) {
+      return nullptr;
+    }
 
-              case token_kind::body_list_rest:
-                if (!subtree->subtree.empty()) {
-                  queue.emplace_front(head_id, subtree->subtree[1]);
-                  queue.emplace_front(head_id, subtree->subtree[2]);
-                }
-                break;
+    // add extra rule
+    token_id space_token_id = get_id(":ws:");
+    if (nts.find(space_token_id) == nts.end()) {
+      nts.insert(space_token_id);
+      std::vector<token_id> rule{};
+      rule.push_back(get_id("' '"));
+      add_rule(ret, space_token_id, std::move(rule));
+      rule.clear();
+      rule.push_back(get_id("0x09"));
+      add_rule(ret, space_token_id, std::move(rule));
+      rule.clear();
+      rule.push_back(get_id("0x0A"));
+      add_rule(ret, space_token_id, std::move(rule));
+      rule.clear();
+      rule.push_back(get_id("0x0D"));
+      add_rule(ret, space_token_id, std::move(rule));
+    }
+    token_id spaces_opt_token_id = get_id(":ws*:");
+    if (nts.find(spaces_opt_token_id) == nts.end()) {
+      nts.insert(spaces_opt_token_id);
+      std::vector<token_id> rule{};
+      rule.push_back(space_token_id);
+      rule.push_back(spaces_opt_token_id);
+      add_rule(ret, spaces_opt_token_id, std::move(rule));
+      add_rule(ret, spaces_opt_token_id, std::vector<token_id>());
+    }
 
-              case token_kind::regexp: {
-                std::shared_ptr<std::vector<std::string>> regexp_tokens =
-                  std::make_shared<std::vector<std::string>>();
-                std::string regexp_source = id_to_regexp_body[subtree->token.id];
-                for (std::size_t i = 0; i < regexp_source.size(); ++i) {
-                  std::string regexp{};
-                  if (regexp_source[i] == '[') {
-                    regexp.push_back(regexp_source[i]);
-                    ++i;
-                    regexp.push_back(regexp_source[i]);
-                    if (regexp_source[i] == '\\' || regexp_source[i] == '^') {
-                      ++i;
-                      regexp.push_back(regexp_source[i]);
-                    }
-                    for (++i; regexp_source[i] != ']'; ++i) {
-                      regexp.push_back(regexp_source[i]);
-                      if (regexp_source[i] == '\\') {
-                        ++i;
-                        regexp.push_back(regexp_source[i]);
-                      }
-                    }
-                    regexp.push_back(regexp_source[i]);
-                  } else {
-                    regexp.push_back(regexp_source[i]);
-                    if (regexp_source[i] == '\\') {
-                      ++i;
-                      regexp.push_back(regexp_source[i]);
-                    }
-                  }
-                  regexp_tokens->emplace_back(std::move(regexp));
-                }
+    // stack continuations
+    std::list<shared_continuation> conts{};
+    for (std::size_t i = 0; i < define_rule.size(); ++i) {
+      shared_continuation cont = std::make_shared<continuation>();
+      cont->base_id = define_rule[i]->subtree[0]->token.id;
+      cont->head_id = define_rule[i]->subtree[0]->token.id;
+      cont->rule = nullptr;
+      cont->body_internal = define_rule[i]->subtree[2]->subtree[0];
+      cont->body_list_ = define_rule[i]->subtree[2]->subtree[1];
+      conts.emplace_front(std::move(cont));
+    }
 
-                std::list<std::shared_ptr<std::vector<std::string>>> regexp_terms{};
-                std::list<std::shared_ptr<std::set<int>>> regexp_combination{};
-                std::list<bool> regexp_nullable{};
-                std::list<bool> regexp_infinitable{};
-                std::list<token_id> regexp_head_ids{};
-                {
-                  std::vector<token_id> rule{};
-                  for (std::size_t index = 0; index < regexp_tokens->size();) {
-                    std::shared_ptr<std::vector<std::string>> term =
-                      std::make_shared<std::vector<std::string>>();
-                    std::shared_ptr<std::set<int>> combination =
-                      std::make_shared<std::set<int>>();
-                    bool nullable = false;
-                    bool infinitable = false;
+    // evaluate rules
+    std::vector<std::pair<token_id, std::shared_ptr<std::vector<token_id>>>> rules{};
+    while (!conts.empty()) {
+      shared_continuation cont = std::move(conts.back());
+      conts.pop_back();
+      if (cont->rule == nullptr) {
+        cont->rule = std::make_shared<std::vector<token_id>>();
+        rules.push_back(std::make_pair(cont->head_id, cont->rule));
+      }
+      if (cont->body_internal->subtree.empty()) {
+        cont->rule = nullptr;
+        if (!cont->body_list_->subtree.empty()) {
+          cont->body_internal = cont->body_list_->subtree[1];
+          cont->body_list_ = cont->body_list_->subtree[2];
+          conts.emplace_back(std::move(cont));
+        }
+        continue;
+      }
+      token_id base_id = cont->base_id;
+      shared_syntax_tree comma_ = cont->body_internal->subtree[0];
+      shared_syntax_tree body = cont->body_internal->subtree[1];
+      std::shared_ptr<std::vector<token_id>> rule = cont->rule;
+      cont->body_internal = cont->body_internal->subtree[2];
+      conts.emplace_back(std::move(cont));
 
-                    if (regexp_tokens->at(index) == "(") {
-                      int nest = 1;
-                      for (++index; index < regexp_tokens->size() && nest != 0; ++index) {
-                        if (regexp_tokens->at(index) == ")") {
-                          --nest;
-                          if (nest == 0) {
-                            continue;
-                          }
-                        } else if (regexp_tokens->at(index) == "(") {
-                          ++nest;
-                        }
-                        term->push_back(regexp_tokens->at(index));
-                      }
-                      if (nest != 0) {
-                        put_error_while_parse_regexp(regexp_source);
-                        break;
-                      }
-                    } else {
-                      term->push_back(regexp_tokens->at(index));
-                      ++index;
-                    }
+      if (!comma_->subtree.empty()) {
+        rule->push_back(spaces_opt_token_id);
+      }
 
-                    combination->insert(1);
-                    while (index < regexp_tokens->size()) {
-                      if (regexp_tokens->at(index).size() == 1) {
-                        char c = regexp_tokens->at(index)[0];
-                        if (c == '?') {
-                          nullable = true;
-                        } else if (c == '*') {
-                          nullable = true;
-                          infinitable = true;
-                        } else if (c == '+') {
-                          infinitable = true;
-                        } else if (c == '{') {
-                          bool is_pair = false;
-                          bool first_char = true;
-                          int min = -1, max = -1;
-                          for (++index; index < regexp_tokens->size(); ++index) {
-                            if (regexp_tokens->at(index).size() != 1) {
-                              errored = true;
-                              break;
-                            } else {
-                              c = regexp_tokens->at(index)[0];
-                              if (c == '}') {
-                                break;
-                              } else if (c == ',') {
-                                if (is_pair) {
-                                  errored = true;
-                                  break;
-                                } else {
-                                  is_pair = true;
-                                  first_char = true;
-                                  min = max;
-                                  max = -1;
-                                }
-                              } else if ('0' <= c && c <= '9') {
-                                if (first_char) {
-                                  first_char = false;
-                                  max = 0;
-                                } else if (max == 0) {
-                                  errored = true;
-                                  break;
-                                }
-                                max = 10 * max + (c - '0');
-                              }
-                            }
-                          }
-                          if (min == -1) {
-                            min = max;
-                          }
-                          if (max == -1 || min > max) {
-                            errored = true;
-                            break;
-                          }
-                          std::shared_ptr<std::set<int>> new_combination =
-                            std::make_shared<std::set<int>>();
-                          for (int times = min; times <= max; ++times) {
-                            for (auto&& it = combination->begin();
-                                        it != combination->end();
-                                        ++it) {
-                              int value = *it * times;
-                              if (new_combination->find(value) == new_combination->end()) {
-                                new_combination->insert(value);
-                              }
-                            }
-                          }
-                          combination = std::move(new_combination);
-                        } else {
-                          break;
-                        }
-                      } else {
-                        break;
-                      }
-                      ++index;
-                    }
-                    if (combination->find(0) != combination->end()) {
-                      nullable = true;
-                      combination->erase(0);
-                    }
-                    if (term->size() != 0 && combination->size() != 0) {
-                      token_id new_token_id = gen_id(id_to_token[subtree->token.id]);
-                      nts.insert(new_token_id);
-                      regexp_terms.emplace_back(std::move(term));
-                      regexp_combination.emplace_back(std::move(combination));
-                      regexp_nullable.push_back(nullable);
-                      regexp_infinitable.push_back(infinitable);
-                      regexp_head_ids.push_back(new_token_id);
-                      rule.push_back(new_token_id);
-                    }
-                  }
-                  add_rule(ret, head_id, std::move(rule));
-                }
+      token_id target_id;
+      bool generated = false, regexp = false;
+      shared_syntax_tree body_opt = nullptr;
+      if (body->subtree[0]->token.kind == token_kind::lparen) {
+        target_id = gen_id(id_to_token[base_id]);
+        generated = true;
+        nts.insert(target_id);
+        body_opt = body->subtree[3];
+        cont = std::make_shared<continuation>();
+        cont->base_id = base_id;
+        cont->head_id = target_id;
+        cont->rule = nullptr;
+        cont->body_internal = body->subtree[1]->subtree[0];
+        cont->body_list_ = body->subtree[1]->subtree[1];
+        conts.emplace_back(std::move(cont));
+      } else {
+        target_id = body->subtree[0]->subtree[0]->token.id;
+        if (body->subtree[0]->subtree[0]->token.kind == token_kind::regexp) {
+          regexp = true;
+        }
+        body_opt = body->subtree[1];
+      }
 
-                while (!regexp_terms.empty()) {
-                  std::shared_ptr<std::vector<std::string>> term = regexp_terms.front();
-                  std::shared_ptr<std::set<int>> combination = regexp_combination.front();
-                  bool nullable = regexp_nullable.front();
-                  bool infinitable = regexp_infinitable.front();
-                  token_id regexp_head_id = regexp_head_ids.front();
-                  regexp_terms.pop_front();
-                  regexp_combination.pop_front();
-                  regexp_nullable.pop_front();
-                  regexp_infinitable.pop_front();
-                  regexp_head_ids.pop_front();
+      bool nullable = false;
+      bool infinitable = false;
+      std::set<int> combination{};
+      combination.insert(1);
+      while (!body_opt->subtree.empty()) {
+        shared_syntax_tree body_opt_ = body_opt->subtree[0];
+        body_opt = body_opt->subtree[1];
+        switch (body_opt_->subtree[0]->token.kind) {
+          case token_kind::question:
+            nullable = true;
+            break;
 
-                  if (!nullable &&
-                      !infinitable &&
-                      combination->size() == 1 &&
-                      combination->find(1) != combination->end() &&
-                      term->size() == 1) {
-                    std::string regexp = term->at(0);
-                    std::array<bool, 256> contains{};
-                    if (regexp == ".") {
-                      for (std::size_t i = 0; i < 256; ++i) {
-                        contains[i] = true;
-                      }
-                    } else {
-                      for (std::size_t i = 0; i < 256; ++i) {
-                        contains[i] = false;
-                      }
-                      if (regexp[0] == '\\') {
-                        contains[static_cast<unsigned char>(regexp[1])] = true;
-                      } else if (regexp[0] == '[') {
-                        std::vector<char> regexp_array{};
-                        std::vector<int> regexp_ranged{};
-                        bool reversed = false;
-                        for (std::size_t i = 1; i < regexp.size() - 1; ++i) {
-                          if (i == 1 && regexp[i] == '^') {
-                            reversed = true;
-                          } else {
-                            if (regexp[i] == '\\') {
-                              ++i;
-                            }
-                            regexp_array.push_back(regexp[i]);
-                            regexp_ranged.push_back(0);
-                          }
-                        }
-                        for (std::size_t i = 1; i < regexp_array.size() - 1; ++i) {
-                          if (regexp_array[i] == '-') {
-                            if (regexp_ranged[i - 1] != 0) {
-                              put_error_while_parse_regexp(regexp_source);
-                              errored = true;
-                            }
-                            regexp_ranged[i - 1] = 1;
-                            regexp_ranged[i] = 2;
-                            regexp_ranged[i + 1] = 1;
-                            ++i;
-                          }
-                        }
-                        for (std::size_t i = 0; i < regexp_array.size(); ++i) {
-                          if (regexp_ranged[i] == 0) {
-                            contains[static_cast<unsigned char>(regexp_array[i])] = true;
-                          } else if (regexp_ranged[i] == 2) {
-                            char first = regexp_array[i - 1];
-                            char last = regexp_array[i + 1];
-                            if (first >= last) {
-                              put_error_while_parse_regexp(regexp_source);
-                              errored = true;
-                            }
-                            for (char c = first; c <= last; ++c) {
-                              contains[static_cast<unsigned char>(c)] = true;
-                            }
-                          }
-                        }
-                        if (reversed) {
-                          for (std::size_t i = 0; i < 256; ++i) {
-                            contains[i] = !contains[i];
-                          }
-                        }
-                      } else {
-                        contains[static_cast<unsigned char>(regexp[0])] = true;
-                      }
-                    }
-                    for (std::size_t i = 0; i < 256; ++i) {
-                      if (contains[i]) {
-                        std::string token{};
-                        if (0x20 <= i && i <= 0x7E) {
-                          token.push_back('\'');
-                          token.push_back(static_cast<char>(i));
-                          if (i == '\\') {
-                            token.push_back(static_cast<char>(i));
-                          }
-                          token.push_back('\'');
-                        } else {
-                          token = "0x";
-                          token.push_back(itoh((i & 0xF0) >> 4));
-                          token.push_back(itoh(i & 0x0F));
-                        }
-                        token_id regex_token_id = get_id(token);
-                        if (unknown.find(regex_token_id) != unknown.end()) {
-                          unknown.erase(regex_token_id);
-                        }
-                        if (ts.find(regex_token_id) == ts.end()) {
-                          ts.insert(regex_token_id);
-                        }
-                        std::vector<token_id> rule{};
-                        rule.push_back(regex_token_id);
-                        add_rule(ret, regexp_head_id, std::move(rule));
-                      }
-                    }
-                  } else {
-                    if (nullable) {
-                      token_id new_token_id = gen_id(id_to_token[subtree->token.id]);
-                      nts.insert(new_token_id);
-                      std::vector<token_id> rule{};
-                      rule.push_back(new_token_id);
-                      if (infinitable) {
-                        rule.push_back(regexp_head_id);
-                      }
-                      add_rule(ret, regexp_head_id, std::move(rule));
-                      add_rule(ret, regexp_head_id, std::vector<token_id>());
-                      regexp_terms.emplace_back(std::move(term));
-                      regexp_combination.emplace_back(std::move(combination));
-                      regexp_nullable.push_back(false);
-                      regexp_infinitable.push_back(false);
-                      regexp_head_ids.push_back(new_token_id);
-                    } else if (infinitable) {
-                      token_id new_token_id = gen_id(id_to_token[subtree->token.id]);
-                      nts.insert(new_token_id);
-                      token_id new_token_id_2 = gen_id(id_to_token[subtree->token.id]);
-                      nts.insert(new_token_id_2);
-                      std::vector<token_id> rule{};
-                      rule.push_back(new_token_id);
-                      rule.push_back(new_token_id_2);
-                      add_rule(ret, regexp_head_id, std::move(rule));
-                      rule.clear();
-                      rule.push_back(new_token_id);
-                      rule.push_back(new_token_id_2);
-                      add_rule(ret, new_token_id_2, std::move(rule));
-                      add_rule(ret, new_token_id_2, std::vector<token_id>());
-                      regexp_terms.emplace_back(std::move(term));
-                      regexp_combination.emplace_back(std::move(combination));
-                      regexp_nullable.push_back(false);
-                      regexp_infinitable.push_back(false);
-                      regexp_head_ids.push_back(new_token_id);
-                    } else if (combination->size() != 1) {
-                      token_id new_token_id_break = gen_id(id_to_token[subtree->token.id]);
-                      nts.insert(new_token_id_break);
-                      int count = 0;
-                      bool first = true;
-                      for (auto&& it = combination->begin(); it != combination->end(); ++it) {
-                        std::vector<token_id> rule{};
-                        while (count < *it) {
-                          rule.push_back(new_token_id_break);
-                          count++;
-                        }
-                        token_id new_token_id_2 = gen_id(id_to_token[id]);
-                        nts.insert(new_token_id_2);
-                        rule.push_back(new_token_id_2);
-                        add_rule(ret, regexp_head_id, std::move(rule));
-                        if (first) {
-                          first = false;
-                        } else {
-                          add_rule(ret, regexp_head_id, std::vector<token_id>());
-                        }
-                        regexp_head_id = new_token_id_2;
-                      }
-                      add_rule(ret, regexp_head_id, std::vector<token_id>());
-                      std::shared_ptr<std::set<int>> new_combination =
-                        std::make_shared<std::set<int>>();
-                      new_combination->insert(1);
-                      regexp_terms.emplace_back(std::move(term));
-                      regexp_combination.emplace_back(std::move(new_combination));
-                      regexp_nullable.push_back(false);
-                      regexp_infinitable.push_back(false);
-                      regexp_head_ids.push_back(new_token_id_break);
-                    } else {
-                      std::vector<token_id> rule{};
-                      for (std::size_t i = 0; i < term->size(); ++i) {
-                        token_id new_token_id = gen_id(id_to_token[subtree->token.id]);
-                        nts.insert(new_token_id);
-                        rule.push_back(new_token_id);
-                        std::shared_ptr<std::vector<std::string>> new_term =
-                          std::make_shared<std::vector<std::string>>();
-                        new_term->push_back(term->at(i));
-                        std::shared_ptr<std::set<int>> new_combination =
-                          std::make_shared<std::set<int>>();
-                        new_combination->insert(1);
-                        regexp_terms.emplace_back(std::move(new_term));
-                        regexp_combination.emplace_back(std::move(new_combination));
-                        regexp_nullable.push_back(false);
-                        regexp_infinitable.push_back(false);
-                        regexp_head_ids.push_back(new_token_id);
-                      }
-                      add_rule(ret, regexp_head_id, std::move(rule));
-                    }
-                  }
-                }
-                break;
-              }
+          case token_kind::star:
+            nullable = true;
+            infinitable = true;
+            break;
 
-              case token_kind::body: {
-                std::vector<token_id> rule{};
-                std::vector<std::pair<token_id, std::vector<token_id>>> rules{};
-                while (!subtree->subtree.empty()) {
-                  shared_syntax_tree body_internal = subtree->subtree[0];
-                  subtree = subtree->subtree[1];
-                  shared_syntax_tree body_opt_list = nullptr;
-                  shared_syntax_tree body_main_term = nullptr;
-                  if (body_internal->subtree[0]->token.kind == token_kind::id ||
-                      body_internal->subtree[0]->token.kind == token_kind::regexp) {
-                    body_main_term = body_internal->subtree[0];
-                    body_opt_list = body_internal->subtree[1];
-                  } else {
-                    body_main_term = body_internal->subtree[1];
-                    body_opt_list = body_internal->subtree[3];
-                  }
-                  bool nullable = false;
-                  bool infinitable = false;
-                  std::set<int> combination{};
-                  combination.insert(1);
-                  while (!body_opt_list->subtree.empty()) {
-                    shared_syntax_tree body_opt = body_opt_list->subtree[0];
-                    body_opt_list = body_opt_list->subtree[1];
-                    switch (body_opt->subtree[0]->token.kind) {
-                      case token_kind::question:
-                        nullable = true;
-                        break;
+          case token_kind::plus:
+            infinitable = true;
+            break;
 
-                      case token_kind::star:
-                        nullable = true;
-                        infinitable = true;
-                        break;
-
-                      case token_kind::plus:
-                        infinitable = true;
-                        break;
-
-                      case token_kind::lcurl: {
-                        shared_syntax_tree range = body_opt->subtree[1];
-                        shared_syntax_tree range_rest_opt = range->subtree[1];
-                        int min, max;
-                        if (range_rest_opt->subtree.empty()) {
-                          min = max = std::stoi(id_to_token[range->subtree[0]->token.id]);
-                        } else {
-                          min = std::stoi(id_to_token[range->subtree[0]->token.id]);
-                          max = std::stoi(id_to_token[range_rest_opt->subtree[1]->token.id]);
-                        }
-                        std::set<int> new_combination{};
-                        for (int times = min; times <= max; ++times) {
-                          for (auto&& it = combination.begin();
-                                      it != combination.end();
-                                      ++it) {
-                            int value = *it * times;
-                            if (new_combination.find(value) == new_combination.end()) {
-                              new_combination.insert(value);
-                            }
-                          }
-                        }
-                        combination = std::move(new_combination);
-                        break;
-                      }
-
-                      default:
-                        break;
-                    }
-                  }
-                  if (body_main_term->token.kind == token_kind::id) {
-                    if (ts.find(body_main_term->token.id) == ts.end() &&
-                        nts.find(body_main_term->token.id) == nts.end()) {
-                      if (id_to_token[body_main_term->token.id][0] == '\'') {
-                        if (unknown.find(body_main_term->token.id) !=
-                            unknown.end()) {
-                          unknown.erase(body_main_term->token.id);
-                        }
-                        ts.insert(body_main_term->token.id);
-                      } else if (unknown.find(body_main_term->token.id) == unknown.end()) {
-                        unknown.insert(body_main_term->token.id);
-                      }
-                    }
-                  }
-                  if (combination.find(0) != combination.end()) {
-                    nullable = true;
-                    combination.erase(0);
-                  }
-                  if (!nullable &&
-                      !infinitable &&
-                      combination.size() == 1 &&
-                      combination.find(1) != combination.end() &&
-                      body_main_term->token.kind == token_kind::id) {
-                    rule.push_back(body_main_term->token.id);
-                  } else {
-                    if (nullable) {
-                      token_id new_token_id = gen_id(id_to_token[id]);
-                      nts.insert(new_token_id);
-                      rule.push_back(new_token_id);
-                      token_id new_token_id_2;
-                      if (body_main_term->token.kind == token_kind::id) {
-                        new_token_id_2 = body_main_term->token.id;
-                      } else {
-                        new_token_id_2 = gen_id(id_to_token[id]);
-                        nts.insert(new_token_id_2);
-                      }
-                      std::vector<token_id> new_rule{};
-                      new_rule.push_back(new_token_id_2);
-                      if (infinitable) {
-                        new_rule.push_back(new_token_id);
-                      }
-                      rules.emplace_back(std::make_pair(new_token_id,
-                                                        std::vector<token_id>()));
-                      rules.emplace_back(std::make_pair(new_token_id, std::move(new_rule)));
-                      if (body_main_term->token.kind != token_kind::id) {
-                        queue.emplace_front(std::make_pair(new_token_id_2, body_main_term));
-                      }
-                    } else if (infinitable) {
-                      token_id new_token_id = gen_id(id_to_token[id]);
-                      nts.insert(new_token_id);
-                      rule.push_back(new_token_id);
-                      token_id new_token_id_loop = new_token_id;
-                      token_id new_token_id_break;
-                      if (body_main_term->token.kind == token_kind::id) {
-                        new_token_id_break = body_main_term->token.id;
-                      } else {
-                        new_token_id_break = gen_id(id_to_token[id]);
-                        nts.insert(new_token_id_break);
-                      }
-                      int count = 0;
-                      bool first = true;
-                      for (auto&& it = combination.begin(); it != combination.end(); ++it) {
-                        std::vector<token_id> new_rule{};
-                        while (count < *it) {
-                          new_rule.push_back(new_token_id_break);
-                          count++;
-                        }
-                        token_id new_token_id_2 = gen_id(id_to_token[id]);
-                        nts.insert(new_token_id_2);
-                        new_rule.push_back(new_token_id_2);
-                        rules.emplace_back(std::make_pair(new_token_id, std::move(new_rule)));
-                        if (first) {
-                          first = false;
-                        } else {
-                          rules.emplace_back(std::make_pair(new_token_id,
-                                                            std::vector<token_id>()));
-                        }
-                        new_token_id = new_token_id_2;
-                      }
-                      std::vector<token_id> new_rule{};
-                      new_rule.push_back(new_token_id_loop);
-                      rules.emplace_back(std::make_pair(new_token_id, std::move(new_rule)));
-                      new_token_id = new_token_id_break;
-                      if (body_main_term->token.kind != token_kind::id) {
-                        queue.emplace_front(std::make_pair(new_token_id, body_main_term));
-                      }
-                    } else {
-                      if (body_internal->subtree[0]->token.kind == token_kind::id) {
-                        rule.push_back(body_internal->subtree[0]->token.id);
-                      } else {
-                        token_id new_token_id = gen_id(id_to_token[id]);
-                        nts.insert(new_token_id);
-                        rule.push_back(new_token_id);
-                        queue.emplace_front(std::make_pair(new_token_id, body_main_term));
-                      }
-                    }
-                  }
-                }
-                add_rule(ret, head_id, std::move(rule));
-                for (auto&& it = rules.begin(); it != rules.end(); ++it) {
-                  add_rule(ret, it->first, std::move(it->second));
-                }
-                break;
-              }
-
-              default:
-                break;
+          case token_kind::lcurl: {
+            shared_syntax_tree range = body_opt_->subtree[1];
+            shared_syntax_tree range_ = range->subtree[1];
+            int min, max;
+            if (range_->subtree.empty()) {
+              min = max = std::stoi(id_to_token[range->subtree[0]->token.id]);
+            } else {
+              min = std::stoi(id_to_token[range->subtree[0]->token.id]);
+              max = std::stoi(id_to_token[range_->subtree[1]->token.id]);
             }
+            std::set<int> new_combination{};
+            for (int times = min; times <= max; ++times) {
+              for (auto&& it = combination.begin();
+                          it != combination.end();
+                          ++it) {
+                int value = *it * times;
+                if (new_combination.find(value) == new_combination.end()) {
+                  new_combination.insert(value);
+                }
+              }
+            }
+            combination = std::move(new_combination);
+            break;
+          }
+
+          default:
+            break;
+        }
+      }
+      if (combination.find(0) != combination.end()) {
+        nullable = true;
+        combination.erase(0);
+
+        if (combination.size() == 0) {
+          continue;
+        }
+      }
+
+      if (nullable) {
+        std::shared_ptr<std::vector<token_id>> dummy_rule = nullptr;
+        token_id dummy_target_id = gen_id(id_to_token[base_id]);
+        nts.insert(dummy_target_id);
+        rule->push_back(dummy_target_id);
+
+        dummy_rule = std::make_shared<std::vector<token_id>>();
+        rules.push_back(std::make_pair(dummy_target_id, dummy_rule));
+        dummy_rule->push_back(target_id);
+        if (infinitable) {
+          dummy_rule->push_back(dummy_target_id);
+        }
+
+        dummy_rule = std::make_shared<std::vector<token_id>>();
+        rules.push_back(std::make_pair(dummy_target_id, dummy_rule));
+      } else if (infinitable) {
+        std::shared_ptr<std::vector<token_id>> dummy_rule = nullptr;
+        token_id dummy_target_id = gen_id(id_to_token[base_id]);
+        nts.insert(dummy_target_id);
+        rule->push_back(target_id);
+        rule->push_back(dummy_target_id);
+
+        dummy_rule = std::make_shared<std::vector<token_id>>();
+        rules.push_back(std::make_pair(dummy_target_id, dummy_rule));
+        dummy_rule->push_back(target_id);
+        dummy_rule->push_back(dummy_target_id);
+
+        dummy_rule = std::make_shared<std::vector<token_id>>();
+        rules.push_back(std::make_pair(dummy_target_id, dummy_rule));
+      }
+
+      if (combination.size() != 1 || combination.find(1) == combination.end()) {
+        std::shared_ptr<std::vector<token_id>> dummy_rule = nullptr;
+        token_id dummy_target_id = gen_id(id_to_token[base_id]);
+        nts.insert(dummy_target_id);
+        rule->push_back(dummy_target_id);
+
+        int count = 0;
+        for (auto&& it = combination.begin(); it != combination.end(); ++it) {
+          dummy_rule = std::make_shared<std::vector<token_id>>();
+          rules.push_back(std::make_pair(dummy_target_id, dummy_rule));
+          while (count < *it) {
+            dummy_rule->push_back(target_id);
+            ++count;
+          }
+          dummy_target_id = gen_id(id_to_token[base_id]);
+          nts.insert(dummy_target_id);
+          dummy_rule->push_back(dummy_target_id);
+          dummy_rule = std::make_shared<std::vector<token_id>>();
+          rules.push_back(std::make_pair(dummy_target_id, dummy_rule));
+        }
+      }
+
+      rule->push_back(target_id);
+
+      if (generated) {
+        continue;
+      }
+
+      if (regexp) {
+        // TODO: re-impl
+      } else {
+        std::string token_string = id_to_token[target_id];
+        if (token_string.size() >= 3 && token_string[0] == '\'') {
+          if (ts.find(target_id) == ts.end()) {
+            ts.insert(target_id);
+          }
+        } else if (nts.find(target_id) == nts.end() &&
+                   ts.find(target_id) == ts.end()) {
+          if (unknown.find(target_id) == unknown.end()) {
+            unknown.insert(target_id);
           }
         }
       }
+    }
+
+    for (std::size_t i = 0; i < rules.size(); ++i) {
+      add_rule(ret, rules[i].first, std::move(*rules[i].second));
     }
 
     if (errored) {

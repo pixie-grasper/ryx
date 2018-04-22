@@ -1810,6 +1810,7 @@ class context {
           }
         }
         if (!need_to_update) {
+          updated = true;
           complete_to_build[target_token_id] = true;
         }
       }

@@ -94,7 +94,7 @@ class context {
     //        ;
     syntax,
 
-    // syntax_ = id eq body_list semicolon
+    // syntax_ = id comma_ eq body_list semicolon
     //         | percent id_ semicolon
     //         ;
     syntax_,
@@ -498,6 +498,41 @@ class context {
           current_quote = static_cast<char>(ch);
           continue;
 
+        case ':': {
+          std::string token_string{};
+          bool number = true;
+          token_string.push_back(static_cast<char>(is->get()));
+
+          ch = is->peek();
+          while (ch == '_' || ('0' <= ch && ch <= '9') ||
+                 ('a' <= ch && ch <= 'z') || ('A' <= ch && ch <= 'Z')) {
+            token_string.push_back(static_cast<char>(is->get()));
+            if (number) {
+              if (!('0' <= ch && ch <= '9')) {
+                number = false;
+              } else if (token_string[0] == '0' && token_string.size() != 1) {
+                number = false;
+              }
+            }
+            ch = is->peek();
+          }
+          if (ch == ':') {
+            token_string.push_back(static_cast<char>(is->get()));
+          } else {
+            put_error_while_get_token();
+            return token(token_kind::invalid);
+          }
+
+          if (token_string.size() == 0) {
+            put_error_while_get_token();
+            return token(token_kind::invalid);
+          } else if (number) {
+            return token(token_kind::num, get_id(token_string));
+          } else {
+            return token(token_kind::id, get_id(token_string));
+          }
+        }
+
         default: {
           std::string token_string{};
           bool number = true;
@@ -732,6 +767,7 @@ class context {
               stack.push_back(token_kind::semicolon);
               stack.push_back(token_kind::body_list);
               stack.push_back(token_kind::eq);
+              stack.push_back(token_kind::comma_);
               stack.push_back(token_kind::id);
               node = node->subtree.back();
               break;
@@ -1023,6 +1059,7 @@ class context {
             case token_kind::id:
             case token_kind::regexp:
             case token_kind::lparen:
+            case token_kind::eq:
               stack.pop_back();
               break;
 
@@ -1255,8 +1292,41 @@ class context {
       cont->base_id = define_rule[i]->subtree[0]->token.id;
       cont->head_id = define_rule[i]->subtree[0]->token.id;
       cont->rule = nullptr;
-      cont->body_internal = define_rule[i]->subtree[2]->subtree[0];
-      cont->body_list_ = define_rule[i]->subtree[2]->subtree[1];
+      shared_syntax_tree body_list = define_rule[i]->subtree[3];
+      if (!define_rule[i]->subtree[2]->subtree.empty()) {
+        shared_syntax_tree body = std::make_shared<syntax_tree>();
+        body->token = token(token_kind::body);
+        shared_syntax_tree lparen = std::make_shared<syntax_tree>();
+        lparen->token = token(token_kind::lparen);
+        shared_syntax_tree rparen = std::make_shared<syntax_tree>();
+        rparen->token = token(token_kind::rparen);
+        shared_syntax_tree body_opt = std::make_shared<syntax_tree>();
+        body_opt->token = token(token_kind::body_opt);
+        body->subtree.push_back(lparen);
+        body->subtree.push_back(body_list);
+        body->subtree.push_back(rparen);
+        body->subtree.push_back(body_opt);
+        shared_syntax_tree body_internal_1 = std::make_shared<syntax_tree>();
+        body_internal_1->token = token(token_kind::body_internal);
+        shared_syntax_tree comma_ = std::make_shared<syntax_tree>();
+        comma_->token = token(token_kind::comma_);
+        shared_syntax_tree comma = std::make_shared<syntax_tree>();
+        comma->token = token(token_kind::id, get_id(","));
+        comma_->subtree.push_back(comma);
+        shared_syntax_tree body_internal_2 = std::make_shared<syntax_tree>();
+        body_internal_2->token = token(token_kind::body_internal);
+        body_internal_1->subtree.push_back(comma_);
+        body_internal_1->subtree.push_back(body);
+        body_internal_1->subtree.push_back(body_internal_2);
+        body_list = std::make_shared<syntax_tree>();
+        body_list->token = token(token_kind::body_list);
+        shared_syntax_tree body_list_ = std::make_shared<syntax_tree>();
+        body_list_->token = token(token_kind::body_list_);
+        body_list->subtree.push_back(body_internal_1);
+        body_list->subtree.push_back(body_list_);
+      }
+      cont->body_internal = body_list->subtree[0];
+      cont->body_list_ = body_list->subtree[1];
       conts.emplace_front(std::move(cont));
     }
 

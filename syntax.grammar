@@ -11,7 +11,7 @@ syntax = syntax_ syntax
        |
        ;
 
-syntax_ = ID '=' body_list ';'
+syntax_ = ID comma_ '=' body_list ';'
         | '%' id_ ';'
         ;
 

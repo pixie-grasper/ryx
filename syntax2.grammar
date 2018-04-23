@@ -7,7 +7,7 @@
 input = syntax*
       ;
 
-syntax = ID '=' body_list ';'
+syntax = ID ','? '=' body_list ';'
        | '%' ID* ';'
        ;
 

@@ -1505,36 +1505,53 @@ class context {
                   reversed = true;
                   ++j;
                 }
-                if (tokens[i]->at(j) == ']') {
-                  chars[']'] = true;
-                  ++j;
-                }
-                while (j < tokens[i]->size()) {
-                  if (tokens[i]->at(j) == '\\') {
-                    ++j;
-                    switch (tokens[i]->at(j)) {
+                std::vector<std::size_t> char_string{};
+                for (std::size_t k = j; k < tokens[i]->size() - 1; ++k) {
+                  if (tokens[i]->at(k) == '\\') {
+                    ++k;
+                    switch (tokens[i]->at(k)) {
                       case 'n':
-                        chars['\n'] = true;
-                        break;
-
-                      case 'r':
-                        chars['\r'] = true;
+                        char_string.push_back('\n');
                         break;
 
                       case 't':
-                        chars['\t'] = true;
+                        char_string.push_back('\t');
+                        break;
+
+                      case 'r':
+                        char_string.push_back('\r');
                         break;
 
                       default:
-                        chars[static_cast<unsigned char>(tokens[i]->at(j))] = true;
+                        char_string.push_back(static_cast<unsigned char>(tokens[i]->at(k)));
                         break;
                     }
-                  } else if (tokens[i]->at(j) == ']') {
-                    break;
                   } else {
-                    chars[static_cast<unsigned char>(tokens[i]->at(j))] = true;
+                    char_string.push_back(static_cast<unsigned char>(tokens[i]->at(k)));
                   }
-                  ++j;
+                }
+                std::vector<int> ranged{};
+                for (std::size_t k = 0; k < char_string.size(); ++k) {
+                  ranged.push_back(0);
+                }
+                for (std::size_t k = 1; k < char_string.size() - 1; ++k) {
+                  if (ranged[k] != 0) {
+                    continue;
+                  }
+                  if (char_string[k] == '-') {
+                    ranged[k - 1] = 1;
+                    ranged[k] = 2;
+                    ranged[k + 1] = 1;
+                  }
+                }
+                for (std::size_t k = 0; k < char_string.size(); ++k) {
+                  if (ranged[k] == 0) {
+                    chars[char_string[k]] = true;
+                  } else if (ranged[k] == 2) {
+                    for (std::size_t c = char_string[k - 1]; c <= char_string[k + 1]; ++c) {
+                      chars[c] = true;
+                    }
+                  }
                 }
                 if (reversed) {
                   for (std::size_t c = 0; c < 256; ++c) {

@@ -1310,6 +1310,8 @@ class context {
           regexp = true;
           if (nts.find(target_id) == nts.end()) {
             nts.insert(target_id);
+          } else {
+            regexp = false;
           }
         }
         body_opt = body->subtree[1];
@@ -2131,7 +2133,11 @@ class context {
               put_warning();
               std::cout << "booked on state "
                         << id_to_token[stack_token_id]
-                        << " with token "
+                        << " (rule "
+                        << static_cast<int>(rid)
+                        << " and rule "
+                        << static_cast<int>(old_rule_id)
+                        << ") with token "
                         << id_to_token[input_token_id]
                         << std::endl;
             }
@@ -2166,7 +2172,11 @@ class context {
                 put_warning();
                 std::cout << "booked on state "
                           << id_to_token[stack_token_id]
-                          << " with token "
+                          << " (rule "
+                          << static_cast<int>(rid)
+                          << " and rule "
+                          << static_cast<int>(old_rule_id)
+                          << ") with token "
                           << id_to_token[input_token_id]
                           << std::endl;
               }

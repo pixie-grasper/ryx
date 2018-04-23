@@ -1160,16 +1160,33 @@ class context {
     if (nts.find(space_token_id) == nts.end()) {
       nts.insert(space_token_id);
       std::vector<token_id> rule{};
-      rule.push_back(get_id("' '"));
+      token_id id;
+      id = get_id("' '");
+      if (ts.find(id) == ts.end()) {
+        ts.insert(id);
+      }
+      rule.push_back(id);
       add_rule(ret, space_token_id, std::move(rule));
       rule.clear();
-      rule.push_back(get_id("0x09"));
+      id = get_id("0x09");
+      if (ts.find(id) == ts.end()) {
+        ts.insert(id);
+      }
+      rule.push_back(id);
       add_rule(ret, space_token_id, std::move(rule));
       rule.clear();
-      rule.push_back(get_id("0x0A"));
+      id = get_id("0x0A");
+      if (ts.find(id) == ts.end()) {
+        ts.insert(id);
+      }
+      rule.push_back(id);
       add_rule(ret, space_token_id, std::move(rule));
       rule.clear();
-      rule.push_back(get_id("0x0D"));
+      id = get_id("0x0D");
+      if (ts.find(id) == ts.end()) {
+        ts.insert(id);
+      }
+      rule.push_back(id);
       add_rule(ret, space_token_id, std::move(rule));
     }
     token_id spaces_opt_token_id = get_id(":ws*:");
@@ -1379,7 +1396,8 @@ class context {
         // TODO: re-impl
       } else {
         std::string token_string = id_to_token[target_id];
-        if (token_string.size() >= 3 && token_string[0] == '\'') {
+        if (token_string.size() >= 3 &&
+            (token_string[0] == '\'' || token_string[0] == '0')) {
           if (ts.find(target_id) == ts.end()) {
             ts.insert(target_id);
           }

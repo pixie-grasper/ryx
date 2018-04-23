@@ -1100,6 +1100,55 @@ class context {
     return;
   }
 
+  std::vector<std::shared_ptr<std::string>> regexp_split(const std::string& regexp) {
+    bool errored = false;
+    std::vector<std::shared_ptr<std::string>> regexp_tokens{};
+    std::size_t i = 0;
+    while (i < regexp.size() && !errored) {
+      std::shared_ptr<std::string> regexp_token = std::make_shared<std::string>();
+      if (regexp[i] == '[') {
+        regexp_token->push_back(regexp[i]);
+        ++i;
+        if (regexp[i] == '^') {
+          regexp_token->push_back(regexp[i]);
+          ++i;
+        }
+        if (regexp[i] == ']') {
+          regexp_token->push_back(regexp[i]);
+          ++i;
+        }
+        errored = true;
+        while (i < regexp.size()) {
+          if (regexp[i] == '\\') {
+            regexp_token->push_back(regexp[i]);
+            ++i;
+            if (!(i < regexp.size())) {
+              break;
+            }
+          } else if (regexp[i] == ']') {
+            regexp_token->push_back(regexp[i]);
+            ++i;
+            errored = false;
+            break;
+          }
+          regexp_token->push_back(regexp[i]);
+          ++i;
+        }
+      } else if (regexp[i] == '\\') {
+        regexp_token->push_back(regexp[i]);
+        ++i;
+        regexp_token->push_back(regexp[i]);
+        ++i;
+      } else {
+        regexp_token->push_back(regexp[i]);
+        ++i;
+      }
+      regexp_tokens.emplace_back(std::move(regexp_token));
+    }
+
+    return regexp_tokens;
+  }
+
   shared_working_memory rule_list_from_syntax_tree(const shared_syntax_tree& tree) {
     shared_syntax_tree syntax = tree->subtree[0]->subtree[0];
     shared_working_memory ret = std::make_shared<working_memory>();
@@ -1259,6 +1308,9 @@ class context {
         target_id = body->subtree[0]->subtree[0]->token.id;
         if (body->subtree[0]->subtree[0]->token.kind == token_kind::regexp) {
           regexp = true;
+          if (nts.find(target_id) == nts.end()) {
+            nts.insert(target_id);
+          }
         }
         body_opt = body->subtree[1];
       }
@@ -1384,6 +1436,8 @@ class context {
           dummy_rule = std::make_shared<std::vector<token_id>>();
           rules.push_back(std::make_pair(dummy_target_id, dummy_rule));
         }
+
+        target_id = original_target_id;
       } else if (!nullable && !infinitable) {
         rule->push_back(target_id);
       }
@@ -1393,7 +1447,309 @@ class context {
       }
 
       if (regexp) {
-        // TODO: re-impl
+        std::vector<std::shared_ptr<std::string>> tokens = regexp_split(id_to_regexp_body[target_id]);
+        std::list<std::pair<token_id, std::vector<std::shared_ptr<std::string>>>> queue{};
+        queue.emplace_back(std::make_pair(target_id, std::move(tokens)));
+        while (!queue.empty()) {
+          target_id = queue.back().first;
+          tokens = std::move(queue.back().second);
+          queue.pop_back();
+          rule = std::make_shared<std::vector<token_id>>();
+          rules.push_back(std::make_pair(target_id, rule));
+          std::size_t i = 0;
+          while (i < tokens.size() && !errored) {
+            char ch = tokens[i]->at(0);
+            token_id symbol_id;
+            switch (ch) {
+              case '(': {
+                int nest = 1;
+                std::vector<std::shared_ptr<std::string>> subtokens{};
+                ++i;
+                while (i < tokens.size()) {
+                  if (tokens[i]->at(0) == ')') {
+                    --nest;
+                    if (nest == 0) {
+                      break;
+                    }
+                  } else if (tokens[i]->at(0) == '(') {
+                    ++nest;
+                  }
+                  subtokens.push_back(tokens[i]);
+                  ++i;
+                }
+                if (nest != 0) {
+                  errored = true;
+                }
+                symbol_id = gen_id(id_to_token[base_id]);
+                nts.insert(symbol_id);
+                queue.push_back(std::make_pair(symbol_id, std::move(subtokens)));
+                break;
+              }
+
+              case '|':
+                rule = std::make_shared<std::vector<token_id>>();
+                rules.push_back(std::make_pair(target_id, rule));
+                ++i;
+                continue;
+
+              case '[': {
+                std::size_t j = 1;
+                symbol_id = gen_id(id_to_token[base_id]);
+                nts.insert(symbol_id);
+                bool reversed = false;
+                std::vector<bool> chars{};
+                for (std::size_t c = 0; c < 256; ++c) {
+                  chars.push_back(false);
+                }
+                if (tokens[i]->at(j) == '^') {
+                  reversed = true;
+                  ++j;
+                }
+                if (tokens[i]->at(j) == ']') {
+                  chars[']'] = true;
+                  ++j;
+                }
+                while (j < tokens[i]->size()) {
+                  if (tokens[i]->at(j) == '\\') {
+                    ++j;
+                    switch (tokens[i]->at(j)) {
+                      case 'n':
+                        chars['\n'] = true;
+                        break;
+
+                      case 'r':
+                        chars['\r'] = true;
+                        break;
+
+                      case 't':
+                        chars['\t'] = true;
+                        break;
+
+                      default:
+                        chars[static_cast<unsigned char>(tokens[i]->at(j))] = true;
+                        break;
+                    }
+                  } else if (tokens[i]->at(j) == ']') {
+                    break;
+                  } else {
+                    chars[static_cast<unsigned char>(tokens[i]->at(j))] = true;
+                  }
+                  ++j;
+                }
+                if (reversed) {
+                  for (std::size_t c = 0; c < 256; ++c) {
+                    chars[c] = !chars[c];
+                  }
+                }
+                for (std::size_t c = 0; c < 256; ++c) {
+                  std::string token_string{};
+                  if (chars[c]) {
+                    if (0x20 <= c && c <= 0x7E) {
+                      token_string.push_back('\'');
+                      token_string.push_back(static_cast<char>(c));
+                      if (c == '\\') {
+                        token_string.push_back(static_cast<char>(c));
+                      }
+                      token_string.push_back('\'');
+                    } else {
+                      token_string = "0x";
+                      token_string.push_back(itoh((c & 0xF0) >> 4));
+                      token_string.push_back(itoh(c & 0x0F));
+                    }
+                    std::shared_ptr<std::vector<token_id>> dummy_rule = std::make_shared<std::vector<token_id>>();
+                    token_id ts_id = get_id(token_string);
+                    if (ts.find(ts_id) == ts.end()) {
+                      ts.insert(ts_id);
+                    }
+                    dummy_rule->push_back(ts_id);
+                    rules.push_back(std::make_pair(symbol_id, dummy_rule));
+                  }
+                }
+                break;
+              }
+
+              case '.': {
+                symbol_id = gen_id(id_to_token[base_id]);
+                nts.insert(symbol_id);
+                for (int c = 0; c < 256; ++c) {
+                  std::string token_string{};
+                  if (0x20 <= c && c <= 0x7E) {
+                    token_string.push_back('\'');
+                    token_string.push_back(static_cast<char>(c));
+                    if (c == '\\') {
+                      token_string.push_back(static_cast<char>(c));
+                    }
+                    token_string.push_back('\'');
+                  } else {
+                    token_string = "0x";
+                    token_string.push_back(itoh((c & 0xF0) >> 4));
+                    token_string.push_back(itoh(c & 0x0F));
+                  }
+                  std::shared_ptr<std::vector<token_id>> dummy_rule = std::make_shared<std::vector<token_id>>();
+                  token_id ts_id = get_id(token_string);
+                  if (ts.find(ts_id) == ts.end()) {
+                    ts.insert(ts_id);
+                  }
+                  dummy_rule->push_back(ts_id);
+                  rules.push_back(std::make_pair(symbol_id, dummy_rule));
+                }
+                break;
+              }
+
+              default: {
+                std::string token_string{};
+                if (0x20 <= ch && ch <= 0x7E) {
+                  token_string.push_back('\'');
+                  token_string.push_back(ch);
+                  if (ch == '\\') {
+                    token_string.push_back(tokens[i]->at(1));
+                  }
+                  token_string.push_back('\'');
+                } else {
+                  token_string = "0x";
+                  token_string.push_back(itoh((ch & 0xF0) >> 4));
+                  token_string.push_back(itoh(ch & 0x0F));
+                }
+                symbol_id = get_id(token_string);
+                break;
+              }
+            }
+            ++i;
+
+            nullable = false;
+            infinitable = false;
+            combination.clear();
+            combination.insert(1);
+            while (i < tokens.size()) {
+              ch = tokens[i]->at(0);
+              if (ch == '?') {
+                nullable = true;
+              } else if (ch == '*') {
+                nullable = true;
+                infinitable = true;
+              } else if (ch == '+') {
+                infinitable = true;
+              } else if (ch == '{') {
+                int min = -1, max = -1;
+                ++i;
+                while (i < tokens.size()) {
+                  ch = tokens[i]->at(0);
+                  if (ch == '}') {
+                    break;
+                  } else if ('0' <= ch && ch <= '9') {
+                    if (max == -1) {
+                      max = ch - '0';
+                    } else if (max == 0) {
+                      errored = true;
+                      break;
+                    } else {
+                      max = max * 10 + (ch - '0');
+                    }
+                  } else if (ch == ',') {
+                    if (min != -1) {
+                      errored = true;
+                      break;
+                    }
+                    min = max;
+                    max = -1;
+                  }
+                  ++i;
+                }
+                if (errored) {
+                  break;
+                }
+                if (min == -1) {
+                  min = max;
+                }
+                if (max == -1) {
+                  errored = true;
+                  break;
+                }
+                std::set<int> new_combination{};
+                for (int times = min; times <= max; ++times) {
+                  for (auto&& it = combination.begin();
+                              it != combination.end();
+                              ++it) {
+                    int value = *it * times;
+                    if (new_combination.find(value) == new_combination.end()) {
+                      new_combination.insert(value);
+                    }
+                  }
+                }
+                combination = std::move(new_combination);
+              } else {
+                break;
+              }
+              ++i;
+            }
+
+            token_id original_symbol_id = symbol_id;
+            if (combination.size() != 1 || combination.find(1) == combination.end()) {
+              symbol_id = gen_id(id_to_token[base_id]);
+              nts.insert(symbol_id);
+            }
+
+            if (nullable) {
+              std::shared_ptr<std::vector<token_id>> dummy_rule = nullptr;
+              token_id dummy_symbol_id = gen_id(id_to_token[base_id]);
+              nts.insert(dummy_symbol_id);
+              rule->push_back(dummy_symbol_id);
+
+              dummy_rule = std::make_shared<std::vector<token_id>>();
+              rules.push_back(std::make_pair(dummy_symbol_id, dummy_rule));
+              dummy_rule->push_back(symbol_id);
+              if (infinitable) {
+                dummy_rule->push_back(dummy_symbol_id);
+              }
+
+              dummy_rule = std::make_shared<std::vector<token_id>>();
+              rules.push_back(std::make_pair(dummy_symbol_id, dummy_rule));
+            } else if (infinitable) {
+              std::shared_ptr<std::vector<token_id>> dummy_rule = nullptr;
+              token_id dummy_symbol_id = gen_id(id_to_token[base_id]);
+              nts.insert(dummy_symbol_id);
+              rule->push_back(symbol_id);
+              rule->push_back(dummy_symbol_id);
+
+              dummy_rule = std::make_shared<std::vector<token_id>>();
+              rules.push_back(std::make_pair(dummy_symbol_id, dummy_rule));
+              dummy_rule->push_back(symbol_id);
+              dummy_rule->push_back(dummy_symbol_id);
+
+              dummy_rule = std::make_shared<std::vector<token_id>>();
+              rules.push_back(std::make_pair(dummy_symbol_id, dummy_rule));
+            }
+
+            if (combination.size() != 1 || combination.find(1) == combination.end()) {
+              std::shared_ptr<std::vector<token_id>> dummy_rule = nullptr;
+              token_id dummy_symbol_id;
+              if (nullable || infinitable) {
+                dummy_symbol_id = symbol_id;
+              } else {
+                dummy_symbol_id = gen_id(id_to_token[base_id]);
+                nts.insert(dummy_symbol_id);
+                rule->push_back(dummy_symbol_id);
+              }
+
+              int count = 0;
+              for (auto&& it = combination.begin(); it != combination.end(); ++it) {
+                dummy_rule = std::make_shared<std::vector<token_id>>();
+                rules.push_back(std::make_pair(dummy_symbol_id, dummy_rule));
+                while (count < *it) {
+                  dummy_rule->push_back(original_symbol_id);
+                  ++count;
+                }
+                dummy_symbol_id = gen_id(id_to_token[base_id]);
+                nts.insert(dummy_symbol_id);
+                dummy_rule->push_back(dummy_symbol_id);
+                dummy_rule = std::make_shared<std::vector<token_id>>();
+                rules.push_back(std::make_pair(dummy_symbol_id, dummy_rule));
+              }
+            } else if (!nullable && !infinitable) {
+              rule->push_back(symbol_id);
+            }
+          }
+        }
       } else {
         std::string token_string = id_to_token[target_id];
         if (token_string.size() >= 3 &&

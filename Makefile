@@ -17,7 +17,7 @@ $(TARGET): $(OBJECT)
 
 .PHONY: clean
 clean:
-	rm $(TARGET)
+	rm $(TARGET) $(OBJECT) ryx_parse*
 
 codegen.o: codegen.h
 

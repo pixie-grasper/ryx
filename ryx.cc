@@ -14,17 +14,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+#include "ryx.h"
+#include "codegen.h"
+
 #include <array>
 #include <fstream>
 #include <list>
 #include <iomanip>
-#include <iostream>
 #include <memory>
 #include <set>
-#include <string>
-#include <unordered_map>
-#include <unordered_set>
-#include <vector>
 
 #define RESET   "\x1B[0m"
 #define BOLD    "\x1B[1m"
@@ -41,6 +39,14 @@
 #define WARNING "    warning: "
 #define NOTE    "       note: "
 #define INDENT  "             "
+
+char itoh(int x) {
+  if (x < 10) {
+    return '0' + static_cast<char>(x);
+  } else {
+    return 'A' + (static_cast<char>(x) - 10);
+  }
+}
 
 static void put_error(void) {
   std::cout << BOLD RED ERROR RESET;
@@ -71,9 +77,6 @@ static void put_bad(void) {
 }
 
 class context {
-  using token_id = std::size_t;
-  using rule_id = std::size_t;
-
   enum class token_kind {
     /* internal symbols */
     end_of_file = 0,
@@ -205,20 +208,21 @@ class context {
   using shared_continuation = std::shared_ptr<continuation>;
 
   struct working_memory {
-    std::unordered_map<rule_id, std::pair<token_id, std::vector<token_id>>> rules;
+    rules_type rules;
     std::unordered_map<token_id, std::unordered_set<rule_id>> rules_of_nts;
-    std::unordered_set<token_id> ts, nts;
+    token_set_type ts, nts;
     std::unordered_map<rule_id, std::unordered_set<token_id>> first;
     std::unordered_map<token_id, std::unordered_set<token_id>> follow;
-    std::unordered_map<token_id, std::unordered_map<token_id, rule_id>> table;
+    table_type table;
   };
 
   using shared_working_memory = std::shared_ptr<working_memory>;
 
-  std::unordered_map<std::string, token_id> token_to_id;
-  std::unordered_map<token_id, std::string> id_to_token;
-  std::unordered_map<token_id, std::string> id_to_regexp_body;
+  token_to_id_type token_to_id;
+  id_to_token_type id_to_token;
+  id_to_token_type id_to_regexp_body;
   shared_syntax_tree parsed_input;
+  shared_working_memory work;
 
   std::istream* is;
   bool verbose, quiet, table, sure_partial_book;
@@ -226,6 +230,8 @@ class context {
   int lr, ln;
   int genid;
   char current_quote;
+
+  std::ostream *header, *ccfile;
 
   void put_linenumber(void) {
     std::cout << "line " << (std::max(lr, ln) + 1) << std::endl;
@@ -252,14 +258,6 @@ class context {
   token_id gen_id(const std::string& token_string) {
     ++genid;
     return get_id(token_string + "[" + std::to_string(genid) + "]");
-  }
-
-  char itoh(int x) {
-    if (x < 10) {
-      return '0' + static_cast<char>(x);
-    } else {
-      return 'A' + (static_cast<char>(x) - 10);
-    }
   }
 
   void put_error_while_get_token(void) {
@@ -1093,12 +1091,12 @@ class context {
     return;
   }
 
-  void add_rule(const shared_working_memory& work,
+  void add_rule(const shared_working_memory& current_work,
                 token_id head_id,
                 std::vector<token_id>&& rule) {
-    rule_id rule_id = work->rules.size();
-    work->rules.insert(std::make_pair(rule_id, std::make_pair(head_id, std::move(rule))));
-    work->rules_of_nts[head_id].insert(rule_id);
+    rule_id rule_id = current_work->rules.size();
+    current_work->rules.insert(std::make_pair(rule_id, std::make_pair(head_id, std::move(rule))));
+    current_work->rules_of_nts[head_id].insert(rule_id);
     return;
   }
 
@@ -1436,7 +1434,7 @@ class context {
     return ret;
   }
 
-  bool build_first_set(const shared_working_memory& work) {
+  bool build_first_set(void) {
     token_id eid = get_id("<epsilon>");
     std::unordered_map<rule_id, bool> complete_to_build{};
     for (auto&& it = work->rules.begin(); it != work->rules.end(); ++it) {
@@ -1534,7 +1532,7 @@ class context {
     return true;
   }
 
-  bool build_follow_set(const shared_working_memory& work) {
+  bool build_follow_set(void) {
     token_id eid = get_id("<epsilon>");
     token_id did = get_id("$");
 
@@ -1674,7 +1672,7 @@ class context {
     return true;
   }
 
-  bool build_table(const std::shared_ptr<working_memory>& work) {
+  bool build_table(void) {
     token_id eid = get_id("<epsilon>");
     token_id did = get_id("$");
     rule_id empty_rule_id = work->rules.size();
@@ -1888,27 +1886,27 @@ class context {
       return false;
     }
 
-    std::shared_ptr<working_memory> work = rule_list_from_syntax_tree(parsed_input);
+    work = rule_list_from_syntax_tree(parsed_input);
     if (work == nullptr) {
       checked = true;
       return false;
     }
 
-    if (!build_first_set(work)) {
+    if (!build_first_set()) {
       put_error();
       std::cout << "building FIRST set failed." << std::endl;
       checked = true;
       return false;
     }
 
-    if (!build_follow_set(work)) {
+    if (!build_follow_set()) {
       put_error();
       std::cout << "building FOLLOW set failed." << std::endl;
       checked = true;
       return false;
     }
 
-    if (!build_table(work)) {
+    if (!build_table()) {
       put_error();
       std::cout << "building TABLE failed." << std::endl;
       checked = true;
@@ -1928,6 +1926,7 @@ class context {
     id_to_regexp_body.clear();
     is = nullptr;
     parsed_input = nullptr;
+    work = nullptr;
     parsed = false;
     checked = false;
     verbose = false;
@@ -1947,11 +1946,27 @@ class context {
     return;
   }
 
+  void set_output(std::ostream& header_, std::ostream& ccfile_) {
+    header = &header_;
+    ccfile = &ccfile_;
+    return;
+  }
+
   bool is_ll1(void) {
     if (!checked) {
       ll1p = check();
     }
     return ll1p;
+  }
+
+  void generate_code(void) {
+    if (!checked) {
+      ll1p = is_ll1();
+    }
+    if (ll1p) {
+      ::generate_code(header, ccfile, work->ts, work->nts, id_to_token, token_to_id, work->rules, work->table);
+    }
+    return;
   }
 
   void set_verbose(void) {
@@ -2027,6 +2042,20 @@ int main(int argc, char** argv) {
   }
 
   if (c->is_ll1()) {
+    std::ofstream header{};
+    header.open("ryx_parse.h", std::ofstream::out);
+    if (!header.is_open()) {
+      std::cout << BOLD RED FATAL RESET "failed to open '" << "ryx_parse.h" << "'" << std::endl;
+      return 1;
+    }
+    std::ofstream ccfile{};
+    ccfile.open("ryx_parse.cc", std::ofstream::out);
+    if (!ccfile.is_open()) {
+      std::cout << BOLD RED FATAL RESET "failed to open '" << "ryx_parse.cc" << "'" << std::endl;
+      return 1;
+    }
+    c->set_output(header, ccfile);
+    c->generate_code();
     return 0;
   } else {
     return 1;

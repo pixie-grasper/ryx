@@ -1,4 +1,6 @@
 *.swp
 *.un~
+*.o
 ryx
+ryx_parse*
 .DS_Store

@@ -1305,6 +1305,12 @@ class context {
         }
       }
 
+      token_id original_target_id = target_id;
+      if (combination.size() != 1 || combination.find(1) == combination.end()) {
+        target_id = gen_id(id_to_token[base_id]);
+        nts.insert(target_id);
+      }
+
       if (nullable) {
         std::shared_ptr<std::vector<token_id>> dummy_rule = nullptr;
         token_id dummy_target_id = gen_id(id_to_token[base_id]);
@@ -1338,16 +1344,21 @@ class context {
 
       if (combination.size() != 1 || combination.find(1) == combination.end()) {
         std::shared_ptr<std::vector<token_id>> dummy_rule = nullptr;
-        token_id dummy_target_id = gen_id(id_to_token[base_id]);
-        nts.insert(dummy_target_id);
-        rule->push_back(dummy_target_id);
+        token_id dummy_target_id;
+        if (nullable || infinitable) {
+          dummy_target_id = target_id;
+        } else {
+          dummy_target_id = gen_id(id_to_token[base_id]);
+          nts.insert(dummy_target_id);
+          rule->push_back(dummy_target_id);
+        }
 
         int count = 0;
         for (auto&& it = combination.begin(); it != combination.end(); ++it) {
           dummy_rule = std::make_shared<std::vector<token_id>>();
           rules.push_back(std::make_pair(dummy_target_id, dummy_rule));
           while (count < *it) {
-            dummy_rule->push_back(target_id);
+            dummy_rule->push_back(original_target_id);
             ++count;
           }
           dummy_target_id = gen_id(id_to_token[base_id]);
@@ -1356,9 +1367,9 @@ class context {
           dummy_rule = std::make_shared<std::vector<token_id>>();
           rules.push_back(std::make_pair(dummy_target_id, dummy_rule));
         }
+      } else if (!nullable && !infinitable) {
+        rule->push_back(target_id);
       }
-
-      rule->push_back(target_id);
 
       if (generated) {
         continue;

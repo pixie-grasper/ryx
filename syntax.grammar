@@ -1,64 +1,59 @@
 %
-  TOKENLIST
-  END
-  OR
   ID
-  IS
-  LPAREN
-  RPAREN
-  LCURL
-  RCURL
-  QUESTION
-  PLUS
-  STAR
   NUM
-  COMMA
+  REGEXP
 ;
 
-input = syntax_list
+input = syntax
       ;
 
-syntax_list = syntax syntax_list
-            |
-            ;
-
-syntax = ID IS body_list END
-       | TOKENLIST id_list END
+syntax = syntax_ syntax
+       |
        ;
 
-body_list = body body_list_rest
-          ;
-
-body_list_rest = OR body body_list_rest
-               |
-               ;
-
-body = body_internal body
-     |
-     ;
-
-body_internal = LPAREN body_list RPAREN body_opt_list
-              | ID body_opt_list
-              ;
-
-body_opt_list = body_opt body_opt_list
-              |
-              ;
-
-body_opt = QUESTION
-         | PLUS
-         | STAR
-         | LCURL range RCURL
-         ;
-
-range = NUM range_rest_opt
-      ;
-
-range_rest_opt = COMMA NUM
-               |
-               ;
-
-id_list = ID id_list
-        |
+syntax_ = ID '=' body_list ';'
+        | '%' id_ ';'
         ;
 
+body_list = body_internal body_list_
+          ;
+
+body_list_ = '|' body_internal body_list_
+           |
+           ;
+
+body_internal = comma_ body body_internal
+              ;
+
+body = '(' body_list ')' body_opt
+     | id_or_regexp body_opt
+     ;
+
+body_opt = body_opt_ body_opt
+         |
+         ;
+
+body_opt_ = '?'
+          | '+'
+          | '*'
+          | '{' range '}'
+          ;
+
+range = NUM range_
+      ;
+
+range_ = ',' NUM
+       |
+       ;
+
+id_ = ID id_
+    |
+    ;
+
+comma_ = ','
+       |
+       ;
+
+id_or_regexp = ID
+             | REGEXP
+             ;

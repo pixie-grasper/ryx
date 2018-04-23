@@ -1,37 +1,29 @@
 %
-  TOKENLIST
-  END
-  OR
   ID
-  IS
-  LPAREN
-  RPAREN
-  LCURL
-  RCURL
-  QUESTION
-  PLUS
-  STAR
   NUM
-  COMMA
+  REGEXP
 ;
 
 input = syntax*
       ;
 
-syntax = ID IS body_list END
-       | TOKENLIST ID* END
+syntax = ID '=' body_list ';'
+       | '%' ID* ';'
        ;
 
-body_list = body? (OR body?)*
+body_list = body_internal* ('|' body_internal*)*
           ;
 
-body = LPAREN body_list RPAREN body_opt*
+body_internal = ','? body
+              ;
+
+body = '(' body_list ')' body_opt*
      | ID body_opt*
      ;
 
-body_opt = QUESTION
-         | PLUS
-         | STAR
-         | LCURL NUM (COMMA NUM)? RCURL
+body_opt = '?'
+         | '+'
+         | '*'
+         | '{' NUM (',' NUM)? '}'
          ;
 

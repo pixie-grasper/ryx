@@ -1,0 +1,43 @@
+input = syntax*
+      ;
+
+syntax = ID '=' body_list ';'
+       | '%' ID* ';'
+       ;
+
+body_list = body_internal* ('|' body_internal*)*
+          ;
+
+body_internal = ','? body
+              ;
+
+body = '(' body_list ')' body_opt*
+     | (ID | REGEXP) body_opt*
+     ;
+
+body_opt = /[?+*]/
+         | '{' NUM (',' NUM)? '}'
+         ;
+
+NUM = '0'
+    | /[1-9][0-9]*/
+    ;
+
+REGEXP = '/' regexp_body '/'
+       ;
+
+regexp_body = regexp_term* ('|' regexp_term*)*
+            ;
+
+regexp_term = '(' regexp_body ')' regexp_opt*
+            | /\\./ regexp_opt*
+            | /[^][()|?+*\\/{}]/ regexp_opt*
+            | '[' '^'? /[^]^]/ /[^]\\]|\\./* ']' regexp_opt*
+            ;
+
+regexp_opt = /[?+*]/
+           | '{' NUM (',' NUM)? '}'
+           ;
+
+ID = /[a-zA-Z_][0-9a-zA-Z_]*/
+   ;

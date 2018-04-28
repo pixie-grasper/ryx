@@ -2266,7 +2266,6 @@ class context {
 
       std::vector<std::vector<std::string>> table_raw{};
       std::vector<std::vector<bool>> table_colored{};
-      std::vector<std::vector<std::size_t>> table_numeric_text_width{};
       std::vector<token_id> table_header_id{};
 
       // first row
@@ -2274,8 +2273,6 @@ class context {
       table_raw.back().emplace_back("");
       table_colored.emplace_back(std::vector<bool>());
       table_colored.back().push_back(false);
-      table_numeric_text_width.emplace_back(std::vector<std::size_t>());
-      table_numeric_text_width.back().push_back(0);
       table_header_id.emplace_back(get_id("<invalid>"));
       for (auto&& stack_token = work->nts.begin();
                   stack_token != work->nts.end();
@@ -2283,7 +2280,6 @@ class context {
         token_id stack_token_id = *stack_token;
         table_raw.back().push_back(id_to_token[stack_token_id]);
         table_colored.back().push_back(false);
-        table_numeric_text_width.back().push_back(0);
         table_header_id.push_back(stack_token_id);
       }
 
@@ -2300,25 +2296,18 @@ class context {
         table_raw.back().push_back(*input_token);
         table_colored.emplace_back(std::vector<bool>());
         table_colored.back().push_back(false);
-        table_numeric_text_width.emplace_back(std::vector<std::size_t>());
-        table_numeric_text_width.back().push_back(0);
         for (std::size_t column = 1; column < table_header_id.size(); ++column) {
           token_id stack_token_id = table_header_id[column];
           rule_id rule_id = work->table[stack_token_id][input_token_id];
           if (rule_id == empty_rule_id) {
             table_raw.back().emplace_back("-");
             table_colored.back().push_back(false);
-            table_numeric_text_width.back().push_back(0);
           } else if (rule_id == booked_rule_id) {
             table_raw.back().emplace_back("*");
             table_colored.back().push_back(true);
-            table_numeric_text_width.back().push_back(0);
           } else {
-            std::string s = std::to_string(rule_id);
-            std::size_t s_size = s.size();
-            table_raw.back().emplace_back(std::move(s));
+            table_raw.back().emplace_back(std::to_string(rule_id));
             table_colored.back().push_back(false);
-            table_numeric_text_width.back().push_back(s_size);
           }
         }
       }
@@ -2335,19 +2324,6 @@ class context {
         for (std::size_t column = 0; column < table_columns; ++column) {
           if (column_width[column] < table_raw[row][column].size()) {
             column_width[column] = table_raw[row][column].size();
-          }
-        }
-      }
-
-      // calculate width of the text fields which text is a number.
-      std::vector<std::size_t> numeric_text_field_width{};
-      for (std::size_t column = 0; column < table_columns; ++column) {
-        numeric_text_field_width.push_back(0);
-      }
-      for (std::size_t row = 1; row < table_rows; ++row) {
-        for (std::size_t column = 0; column < table_columns; ++column) {
-          if (numeric_text_field_width[column] < table_numeric_text_width[row][column]) {
-            numeric_text_field_width[column] = table_numeric_text_width[row][column];
           }
         }
       }

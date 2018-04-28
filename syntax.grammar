@@ -23,6 +23,7 @@ body_list_ = '|' body_internal body_list_
            ;
 
 body_internal = comma_ body body_internal
+              |
               ;
 
 body = '(' body_list ')' body_opt

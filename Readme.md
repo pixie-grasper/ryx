@@ -29,14 +29,15 @@ syntax = ID '=' body_list ';'
        | '%' ID* ';'
        ;
 
-body_list = body_internal* ('|' body_internal*)*
+body_list = body_internal ('|' body_internal)*
           ;
 
-body_internal = ','? body
+body_internal = (','? body)*
               ;
 
 body = '(' body_list ')' body_opt*
      | (ID | REGEXP) body_opt*
+     | '@' NUM?
      ;
 
 body_opt = /[?+*]/

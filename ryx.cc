@@ -225,7 +225,7 @@ class context {
   shared_working_memory work;
 
   std::istream* is;
-  bool verbose, quiet, table, sure_partial_book;
+  bool verbose, quiet, table, sure_partial_book, width_limited;
   bool parsed, checked, ll1p;
   int lr, ln;
   int genid;
@@ -2262,91 +2262,197 @@ class context {
     }
 
     if (verbose || table) {
-      std::vector<std::size_t> column_width{};
-      std::vector<token_id> column_item{};
-      column_item.push_back(get_id(""));
-      column_width.push_back(0);
+      work->ts.insert(did);
+
+      std::vector<std::vector<std::string>> table_raw{};
+      std::vector<std::vector<bool>> table_colored{};
+      std::vector<std::vector<std::size_t>> table_numeric_text_width{};
+      std::vector<token_id> table_header_id{};
+
+      // first row
+      table_raw.emplace_back(std::vector<std::string>());
+      table_raw.back().emplace_back("");
+      table_colored.emplace_back(std::vector<bool>());
+      table_colored.back().push_back(false);
+      table_numeric_text_width.emplace_back(std::vector<std::size_t>());
+      table_numeric_text_width.back().push_back(0);
+      table_header_id.emplace_back(get_id("<invalid>"));
       for (auto&& stack_token = work->nts.begin();
                   stack_token != work->nts.end();
                   ++stack_token) {
         token_id stack_token_id = *stack_token;
-        if (column_width.back() < id_to_token[stack_token_id].size()) {
-          column_width.back() = id_to_token[stack_token_id].size();
-        }
+        table_raw.back().push_back(id_to_token[stack_token_id]);
+        table_colored.back().push_back(false);
+        table_numeric_text_width.back().push_back(0);
+        table_header_id.push_back(stack_token_id);
       }
 
-      work->ts.insert(did);
+      // rest rows
+      std::set<std::string> ts{};
       for (auto&& input_token = work->ts.begin();
                   input_token != work->ts.end();
                   ++input_token) {
-        token_id input_token_id = *input_token;
-        column_item.push_back(input_token_id);
-        column_width.push_back(id_to_token[input_token_id].size());
-        for (auto&& stack_token = work->nts.begin();
-                    stack_token != work->nts.end();
-                    ++stack_token) {
-          token_id stack_token_id = *stack_token;
+        ts.insert(id_to_token[*input_token]);
+      }
+      for (auto&& input_token = ts.begin(); input_token != ts.end(); ++input_token) {
+        token_id input_token_id = token_to_id[*input_token];
+        table_raw.emplace_back(std::vector<std::string>());
+        table_raw.back().push_back(*input_token);
+        table_colored.emplace_back(std::vector<bool>());
+        table_colored.back().push_back(false);
+        table_numeric_text_width.emplace_back(std::vector<std::size_t>());
+        table_numeric_text_width.back().push_back(0);
+        for (std::size_t column = 1; column < table_header_id.size(); ++column) {
+          token_id stack_token_id = table_header_id[column];
           rule_id rule_id = work->table[stack_token_id][input_token_id];
-          std::size_t num_width = std::to_string(rule_id).size();
-          if (rule_id == empty_rule_id || rule_id == booked_rule_id) {
-            num_width = 1;
-          }
-          if (column_width.back() < num_width) {
-            column_width.back() = num_width;
+          if (rule_id == empty_rule_id) {
+            table_raw.back().emplace_back("-");
+            table_colored.back().push_back(false);
+            table_numeric_text_width.back().push_back(0);
+          } else if (rule_id == booked_rule_id) {
+            table_raw.back().emplace_back("*");
+            table_colored.back().push_back(true);
+            table_numeric_text_width.back().push_back(0);
+          } else {
+            std::string s = std::to_string(rule_id);
+            std::size_t s_size = s.size();
+            table_raw.back().emplace_back(std::move(s));
+            table_colored.back().push_back(false);
+            table_numeric_text_width.back().push_back(s_size);
           }
         }
       }
 
-      std::cout << "table:" << std::endl;
-      std::cout << "  ";
-      for (std::size_t col = 0; col < column_item.size(); ++col) {
-        if (col != 0) {
-          std::cout << " ";
-        }
-        std::string text = id_to_token[column_item[col]];
-        std::size_t cw = text.size();
-        std::size_t lw = (column_width[col] - cw) / 2;
-        std::size_t rw = column_width[col] - lw - cw;
-        std::cout << std::string(lw, ' ') << text << std::string(rw, ' ');
+      std::size_t table_rows = table_raw.size();
+      std::size_t table_columns = table_raw[0].size();
+
+      // calculate width of the columns
+      std::vector<std::size_t> column_width{};
+      for (std::size_t column = 0; column < table_columns; ++column) {
+        column_width.push_back(table_raw[0][column].size());
       }
-      std::cout << std::endl;
-      std::unordered_set<token_id> nts{};
-      for (rule_id rid = 0; rid < work->rules.size(); ++rid) {
-        token_id stack_token_id = work->rules[rid].first;
-        if (nts.find(stack_token_id) != nts.end()) {
-          continue;
-        }
-        nts.insert(stack_token_id);
-        std::cout << "  ";
-        for (std::size_t col = 0; col < column_item.size(); ++col) {
-          if (col != 0) {
-            std::cout << " ";
+      for (std::size_t row = 1; row < table_rows; ++row) {
+        for (std::size_t column = 0; column < table_columns; ++column) {
+          if (column_width[column] < table_raw[row][column].size()) {
+            column_width[column] = table_raw[row][column].size();
           }
-          std::string text{};
-          std::size_t cw, lw;
-          if (col == 0) {
-            text = id_to_token[stack_token_id];
-            cw = text.size();
-            lw = 0;
-          } else {
-            token_id input_token_id = column_item[col];
-            rule_id rule_id = work->table[stack_token_id][input_token_id];
-            if (rule_id == empty_rule_id) {
-              text = "-";
-              cw = 1;
-            } else if (rule_id == booked_rule_id) {
-              text = BOLD YELLOW "*" RESET;
-              cw = 1;
-            } else {
-              text = std::to_string(rule_id);
-              cw = text.size();
+        }
+      }
+
+      // calculate width of the text fields which text is a number.
+      std::vector<std::size_t> numeric_text_field_width{};
+      for (std::size_t column = 0; column < table_columns; ++column) {
+        numeric_text_field_width.push_back(0);
+      }
+      for (std::size_t row = 1; row < table_rows; ++row) {
+        for (std::size_t column = 0; column < table_columns; ++column) {
+          if (numeric_text_field_width[column] < table_numeric_text_width[row][column]) {
+            numeric_text_field_width[column] = table_numeric_text_width[row][column];
+          }
+        }
+      }
+
+      // generate table to output
+      std::vector<std::vector<std::string>> table_view{};
+      for (std::size_t row = 0; row < table_rows; ++row) {
+        table_view.emplace_back(std::vector<std::string>());
+        for (std::size_t column = 0; column < table_columns; ++column) {
+          table_view[row].emplace_back("");
+          if (table_colored[row][column]) {
+            table_view[row].back() += BOLD YELLOW;
+          }
+
+          // calculate margines
+          std::size_t cell_width = column_width[column];
+          std::size_t text_width = table_raw[row][column].size();
+          std::size_t total_margin = cell_width - text_width;
+          std::size_t right_margin = total_margin / 2;
+          std::size_t left_margin = total_margin - right_margin;
+          if ((cell_width & 1) == 1 && (total_margin & 1) == 1) {
+            right_margin++;
+            left_margin--;
+          }
+
+          table_view[row].back() += std::string(left_margin, ' ');
+          table_view[row].back() += table_raw[row][column];
+          table_view[row].back() += std::string(right_margin, ' ');
+          if (table_colored[row][column]) {
+            table_view[row].back() += RESET;
+          }
+        }
+      }
+
+      // output
+      std::string table_indent = "  ";
+      if (!width_limited) {
+        std::cout << "table:" << std::endl;
+        for (std::size_t row = 0; row < table_rows; ++row) {
+          std::cout << table_indent;
+          for (std::size_t column = 0; column < table_columns; ++column) {
+            if (column != 0) {
+              std::cout << " ";
             }
-            lw = (column_width[col] - cw + (cw & 1)) / 2;
+            std::cout << table_view[row][column];
           }
-          std::size_t rw = column_width[col] - lw - cw;
-          std::cout << std::string(lw, ' ') << text << std::string(rw, ' ');
+          std::cout << std::endl;
         }
-        std::cout << std::endl;
+      } else {
+        std::size_t current_column = 1;
+        std::vector<std::pair<std::size_t, std::size_t>> column_pairs{};
+        while (current_column < table_columns) {
+          std::size_t total_width = table_indent.size() + column_width[0];
+          std::size_t first_column = current_column;
+          std::size_t last_column = current_column;
+          for (std::size_t column = first_column; column < table_columns; ++column) {
+            std::size_t additional_width = 1 + column_width[column];
+            if (total_width + additional_width < 100) {
+              total_width += additional_width;
+              last_column = column;
+            } else {
+              break;
+            }
+          }
+          column_pairs.emplace_back(std::make_pair(first_column, last_column));
+          current_column = last_column + 1;
+        }
+
+        if (column_pairs.size() != 1) {
+          for (std::size_t pair_index = 0; pair_index < column_pairs.size(); ++pair_index) {
+            std::size_t first_column = column_pairs[pair_index].first;
+            std::size_t last_column = column_pairs[pair_index].second;
+
+            if (pair_index != 0) {
+              std::cout << std::endl;
+            }
+
+            std::cout << "table ("
+                      << (pair_index + 1)
+                      << "/"
+                      << column_pairs.size()
+                      << "):"
+                      << std::endl;
+
+            for (std::size_t row = 0; row < table_rows; ++row) {
+              std::cout << table_indent << table_view[row][0];
+              for (std::size_t column = first_column; column <= last_column; ++column) {
+                std::cout << " " << table_view[row][column];
+              }
+              std::cout << std::endl;
+            }
+          }
+        } else {
+          std::cout << "table:" << std::endl;
+          for (std::size_t row = 0; row < table_rows; ++row) {
+            std::cout << table_indent;
+            for (std::size_t column = 0; column < table_columns; ++column) {
+              if (column != 0) {
+                std::cout << " ";
+              }
+              std::cout << table_view[row][column];
+            }
+            std::cout << std::endl;
+          }
+        }
       }
     }
 
@@ -2418,6 +2524,8 @@ class context {
     verbose = false;
     quiet = false;
     table = false;
+    sure_partial_book = false;
+    width_limited = false;
     ll1p = false;
     lr = 0;
     ln = 0;
@@ -2481,6 +2589,11 @@ class context {
     sure_partial_book = true;
     return;
   }
+
+  void set_width_limited(void) {
+    width_limited = true;
+    return;
+  }
 };
 
 int main(int argc, char** argv) {
@@ -2492,6 +2605,7 @@ int main(int argc, char** argv) {
   bool quiet = false;
   bool table = false;
   bool sure_partial_book = false;
+  bool width_limited = false;
   for (int i = 1; i < argc; ++i) {
     if (argv[i][0] == '-') {
       for (std::size_t j = 1; argv[i][j] != '\0'; ++j) {
@@ -2503,6 +2617,8 @@ int main(int argc, char** argv) {
           table = true;
         } else if (argv[i][j] == 'p') {
           sure_partial_book = true;
+        } else if (argv[i][j] == 'w') {
+          width_limited = true;
         }
       }
     } else {
@@ -2532,6 +2648,9 @@ int main(int argc, char** argv) {
   }
   if (sure_partial_book) {
     c->ensure_partial_book();
+  }
+  if (width_limited) {
+    c->set_width_limited();
   }
 
   if (c->is_ll1()) {

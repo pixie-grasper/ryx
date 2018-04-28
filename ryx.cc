@@ -115,6 +115,7 @@ class context {
 
     // body = '(' body_list ')' body_opt
     //      | id_or_regexp body_opt
+    //      | '@' number_
     //      ;
     body,
 
@@ -154,6 +155,11 @@ class context {
     //              ;
     id_or_regexp,
 
+    // number_ = NUM
+    //         |
+    //         ;
+    number_,
+
     /* terminate symbols */
     id,
     num,
@@ -171,6 +177,7 @@ class context {
     star,
     comma,
     period,
+    at,
   };
 
   struct token {
@@ -434,6 +441,9 @@ class context {
         case '.':
           return token(token_kind::period);
 
+        case '@':
+          return token(token_kind::at);
+
         case '/': {
           std::string token_string{};
 
@@ -609,6 +619,7 @@ class context {
           case token_kind::id_:             std::cout << "id~";               break;
           case token_kind::comma_:          std::cout << "comma~";            break;
           case token_kind::id_or_regexp:    std::cout << "id-or-regexp";      break;
+          case token_kind::number_:         std::cout << "number~";           break;
           case token_kind::id:              std::cout << "ID";                break;
           case token_kind::regexp:          std::cout << "REGEXP";            break;
           case token_kind::num:             std::cout << "NUM";               break;
@@ -625,6 +636,7 @@ class context {
           case token_kind::star:            std::cout << "*";                 break;
           case token_kind::comma:           std::cout << ",";                 break;
           case token_kind::period:          std::cout << ".";                 break;
+          case token_kind::at:              std::cout << "@";                 break;
         }
         stack.pop_back();
       }
@@ -663,7 +675,8 @@ class context {
           case token_kind::plus:        std::cout << "+"; break;
           case token_kind::star:        std::cout << "*"; break;
           case token_kind::comma:       std::cout << ","; break;
-          case token_kind::period:      std::cout << ","; break;
+          case token_kind::period:      std::cout << "."; break;
+          case token_kind::at:          std::cout << "@"; break;
           default:                                        break;
         }
       }
@@ -801,6 +814,7 @@ class context {
             case token_kind::lparen:
             case token_kind::rparen:
             case token_kind::comma:
+            case token_kind::at:
               stack.pop_back();
               stack.push_back(token_kind::end_of_body);
               stack.push_back(token_kind::body_list_);
@@ -850,6 +864,7 @@ class context {
             case token_kind::regexp:
             case token_kind::lparen:
             case token_kind::comma:
+            case token_kind::at:
               stack.pop_back();
               stack.push_back(token_kind::end_of_body);
               stack.push_back(token_kind::body_internal);
@@ -895,6 +910,14 @@ class context {
               node = node->subtree.back();
               break;
 
+            case token_kind::at:
+              stack.pop_back();
+              stack.push_back(token_kind::end_of_body);
+              stack.push_back(token_kind::number_);
+              stack.push_back(token_kind::at);
+              node = node->subtree.back();
+              break;
+
             default:
               put_error_while_parse(stack, t);
               ret = nullptr;
@@ -925,6 +948,7 @@ class context {
             case token_kind::rparen:
             case token_kind::bar:
             case token_kind::comma:
+            case token_kind::at:
               stack.pop_back();
               break;
 
@@ -1061,6 +1085,7 @@ class context {
             case token_kind::regexp:
             case token_kind::lparen:
             case token_kind::eq:
+            case token_kind::at:
               stack.pop_back();
               break;
 
@@ -1087,6 +1112,36 @@ class context {
               stack.pop_back();
               stack.push_back(token_kind::end_of_body);
               stack.push_back(token_kind::regexp);
+              node = node->subtree.back();
+              break;
+
+            default:
+              put_error_while_parse(stack, t);
+              ret = nullptr;
+              end = true;
+              break;
+          }
+          break;
+
+        case token_kind::number_:
+          node->subtree.push_back(std::make_shared<syntax_tree>(node));
+          node->subtree.back()->token = token(token_kind::number_);
+          switch (t.kind) {
+            case token_kind::id:
+            case token_kind::regexp:
+            case token_kind::semicolon:
+            case token_kind::lparen:
+            case token_kind::rparen:
+            case token_kind::bar:
+            case token_kind::comma:
+            case token_kind::at:
+              stack.pop_back();
+              break;
+
+            case token_kind::num:
+              stack.pop_back();
+              stack.push_back(token_kind::end_of_body);
+              stack.push_back(token_kind::num);
               node = node->subtree.back();
               break;
 

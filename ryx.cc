@@ -1341,6 +1341,11 @@ class context {
       add_rule(ret, spaces_opt_token_id, std::move(rule));
       add_rule(ret, spaces_opt_token_id, std::vector<token_id>());
     }
+    token_id atmark_token_id = get_id(":@:");
+    if (nts.find(atmark_token_id) == nts.end()) {
+      nts.insert(atmark_token_id);
+      add_rule(ret, atmark_token_id, std::vector<token_id>());
+    }
 
     // stack continuations
     std::list<shared_continuation> conts{};
@@ -1431,6 +1436,9 @@ class context {
         cont->body_internal = body->subtree[1]->subtree[0];
         cont->body_list_ = body->subtree[1]->subtree[1];
         conts.emplace_back(std::move(cont));
+      } else if (body->subtree[0]->token.kind == token_kind::at) {
+        target_id = atmark_token_id;
+        body_opt = std::make_shared<syntax_tree>();
       } else {
         target_id = body->subtree[0]->subtree[0]->token.id;
         if (body->subtree[0]->subtree[0]->token.kind == token_kind::regexp) {

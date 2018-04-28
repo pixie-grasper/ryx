@@ -115,6 +115,7 @@ class context {
 
     // body = '(' body_list ')' body_opt
     //      | id_or_regexp body_opt
+    //      ;
     body,
 
     // body_opt = body_opt_ body_opt

@@ -1132,7 +1132,8 @@ class context {
                 token_id head_id,
                 std::vector<token_id>&& rule) {
     rule_id rule_id = current_work->rules.size();
-    current_work->rules.insert(std::make_pair(rule_id, std::make_pair(head_id, std::move(rule))));
+    current_work->rules.insert(std::make_pair(rule_id,
+                                              std::make_pair(head_id, std::move(rule))));
     current_work->rules_of_nts[head_id].insert(rule_id);
     return;
   }
@@ -1519,7 +1520,8 @@ class context {
       }
 
       if (regexp) {
-        std::vector<std::shared_ptr<std::string>> tokens = regexp_split(id_to_regexp_body[target_id]);
+        std::vector<std::shared_ptr<std::string>> tokens =
+          regexp_split(id_to_regexp_body[target_id]);
         std::list<std::pair<token_id, std::vector<std::shared_ptr<std::string>>>> queue{};
         queue.emplace_back(std::make_pair(target_id, std::move(tokens)));
         while (!queue.empty()) {
@@ -1645,7 +1647,8 @@ class context {
                       token_string.push_back(itoh((c & 0xF0) >> 4));
                       token_string.push_back(itoh(c & 0x0F));
                     }
-                    std::shared_ptr<std::vector<token_id>> dummy_rule = std::make_shared<std::vector<token_id>>();
+                    std::shared_ptr<std::vector<token_id>> dummy_rule =
+                      std::make_shared<std::vector<token_id>>();
                     token_id ts_id = get_id(token_string);
                     if (ts.find(ts_id) == ts.end()) {
                       ts.insert(ts_id);
@@ -1674,7 +1677,8 @@ class context {
                     token_string.push_back(itoh((c & 0xF0) >> 4));
                     token_string.push_back(itoh(c & 0x0F));
                   }
-                  std::shared_ptr<std::vector<token_id>> dummy_rule = std::make_shared<std::vector<token_id>>();
+                  std::shared_ptr<std::vector<token_id>> dummy_rule =
+                    std::make_shared<std::vector<token_id>>();
                   token_id ts_id = get_id(token_string);
                   if (ts.find(ts_id) == ts.end()) {
                     ts.insert(ts_id);
@@ -2446,7 +2450,14 @@ class context {
       ll1p = is_ll1();
     }
     if (ll1p) {
-      ::generate_code(header, ccfile, work->ts, work->nts, id_to_token, token_to_id, work->rules, work->table);
+      ::generate_code(header,
+                      ccfile,
+                      work->ts,
+                      work->nts,
+                      id_to_token,
+                      token_to_id,
+                      work->rules,
+                      work->table);
     }
     return;
   }
@@ -2527,13 +2538,19 @@ int main(int argc, char** argv) {
     std::ofstream header{};
     header.open("ryx_parse.h", std::ofstream::out);
     if (!header.is_open()) {
-      std::cout << BOLD RED FATAL RESET "failed to open '" << "ryx_parse.h" << "'" << std::endl;
+      std::cout << BOLD RED FATAL RESET "failed to open '"
+                << "ryx_parse.h"
+                << "'"
+                << std::endl;
       return 1;
     }
     std::ofstream ccfile{};
     ccfile.open("ryx_parse.cc", std::ofstream::out);
     if (!ccfile.is_open()) {
-      std::cout << BOLD RED FATAL RESET "failed to open '" << "ryx_parse.cc" << "'" << std::endl;
+      std::cout << BOLD RED FATAL RESET "failed to open '"
+                << "ryx_parse.cc"
+                << "'"
+                << std::endl;
       return 1;
     }
     c->set_output(header, ccfile);

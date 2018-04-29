@@ -2600,6 +2600,8 @@ class context {
     if (ll1p) {
       ::generate_code(header,
                       ccfile,
+                      get_id("input"),
+                      get_id("$"),
                       work->ts,
                       work->nts,
                       id_to_token,

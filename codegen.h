@@ -21,6 +21,8 @@
 
 extern void generate_code(std::ostream* header_,
                           std::ostream* ccfile_,
+                          token_id first_nonterm,
+                          token_id last_term,
                           const token_set_type& terminate_symbols,
                           const token_set_type& non_terminate_symbols,
                           const id_to_token_type& id_to_token,

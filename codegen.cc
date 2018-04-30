@@ -283,6 +283,7 @@ extern void generate_code(std::ostream* header_,
 
   ccfile << "struct ryx_tree {"
          << "  struct ryx_shared_token* shared_token;"
+         << "  struct ryx_tree* parent_node;"
          << "  struct ryx_tree* next_node;"
          << "  struct ryx_tree* sub_node_first;"
          << "  struct ryx_tree* sub_node_last;"
@@ -364,24 +365,8 @@ extern void generate_code(std::ostream* header_,
          << "";
 
   ccfile << "INTERN"
-         << "struct ryx_stack* ryx_stack_push_copy(struct ryx_stack* stack,"
-         << "                                      struct ryx_shared_token* shared_token) {"
-         << "  struct ryx_stack* ret;"
-         << ""
-         << "  ret = MALLOC(struct ryx_stack);"
-         << "  ret->shared_token = shared_token;"
-         << "  ret->next = stack;"
-         << ""
-         << "  ryx_ref_shared_token(shared_token);"
-         << ""
-         << "  return ret;"
-         << "}"
-         << "INTERN_END"
-         << "";
-
-  ccfile << "INTERN"
-         << "struct ryx_stack* ryx_stack_push_move(struct ryx_stack* stack,"
-         << "                                      struct ryx_shared_token* shared_token) {"
+         << "struct ryx_stack* ryx_stack_push(struct ryx_stack* stack,"
+         << "                                 struct ryx_shared_token* shared_token) {"
          << "  struct ryx_stack* ret;"
          << ""
          << "  ret = MALLOC(struct ryx_stack);"
@@ -423,6 +408,36 @@ extern void generate_code(std::ostream* header_,
          << "";
 
   ccfile << "INTERN"
+         << "struct ryx_tree* ryx_tree_add_right_shared_token(struct ryx_tree* tree,"
+         << "                                                 struct ryx_shared_token* shared_token) {"
+         << "  if (tree->sub_node_last == NULLPTR) {"
+         << "    tree->sub_node_first = MALLOC(struct ryx_tree);"
+         << "    tree->sub_node_last = tree->sub_node_first;"
+         << "  } else {"
+         << "    tree->sub_node_last->next_node = MALLOC(struct ryx_tree);"
+         << "    tree->sub_node_last = tree->sub_node_last->next_node;"
+         << "  }"
+         << ""
+         << "  tree->sub_node_last->shared_token = shared_token;"
+         << "  tree->sub_node_last->parent_node = tree;"
+         << "  tree->sub_node_last->next_node = NULLPTR;"
+         << "  tree->sub_node_last->sub_node_first = NULLPTR;"
+         << "  tree->sub_node_last->sub_node_last = NULLPTR;"
+         << ""
+         << "  return tree;"
+         << "}"
+         << "INTERN_END"
+         << "";
+
+  ccfile << "INTERN"
+         << "struct ryx_tree* ryx_tree_add_right(struct ryx_tree* tree,"
+         << "                                    enum ryx_node_kind kind) {"
+         << "  return ryx_tree_add_right_shared_token(tree, ryx_make_internal_token(kind));"
+         << "}"
+         << "INTERN_END"
+         << "";
+
+  ccfile << "INTERN"
          << "void ryx_tree_free(struct ryx_tree* tree) {"
          << "  struct ryx_tree* node;"
          << ""
@@ -443,21 +458,6 @@ extern void generate_code(std::ostream* header_,
          << "INTERN_END"
          << "";
 
-  ccfile << "INTERN"
-         << "struct ryx_stack* ryx_make_initial_stack(void) {"
-         << "  struct ryx_stack* ret;"
-         << ""
-         << "  ret = NULLPTR;"
-         << ""
-         << "  ret = ryx_stack_push_move(ret, ryx_make_internal_token("
-            + token_id_to_enum_string[first_nonterm]
-            + "));"
-         << ""
-         << "  return ret;"
-         << "}"
-         << "INTERN_END"
-         << "";
-
   header << "EXTERN struct ryx_tree* ryx_parse(ryx_user_data input);";
   ccfile << "EXTERN struct ryx_tree* ryx_parse(ryx_user_data input) {"
          << "  struct ryx_stack* stack;"
@@ -466,19 +466,43 @@ extern void generate_code(std::ostream* header_,
          << "  struct ryx_shared_token* shared_token;"
          << "  int finished;"
          << ""
-         << "  stack = ryx_make_initial_stack();"
-         << "  ret = NULLPTR;"
-         << "  node = NULLPTR;"
+         << "  stack = ryx_stack_push(NULLPTR, ryx_make_internal_token("
+            + token_id_to_enum_string[first_nonterm]
+            + "));"
+         << "  ret = MALLOC(struct ryx_tree);"
+         << "  ret->shared_token = ryx_make_internal_token("
+            + token_id_to_enum_string[first_nonterm]
+            + ");"
+         << "  ret->parent_node = NULLPTR;"
+         << "  ret->next_node = NULLPTR;"
+         << "  ret->sub_node_first = NULLPTR;"
+         << "  ret->sub_node_last = NULLPTR;"
+         << "  node = ret;"
          << "  finished = 0;"
          << "  shared_token = ryx_make_shared_token(ryx_get_next_token(input));"
          << ""
          << "  while (!finished) {"
          << "    switch (stack->shared_token->token->kind) {";
 
+  // $
+  {
+    ccfile << "      /* stack.top == $ */"
+           << "      case " + token_id_to_enum_string[last_term] + ":"
+           << "        if (shared_token->token->kind != " + token_id_to_enum_string[last_term] + ") {"
+           << "          ryx_tree_free(ret);"
+           << "          ret = NULLPTR;"
+           << "        }"
+           << "        ryx_stack_free(stack);"
+           << "        ryx_unref_shared_token(shared_token);"
+           << "        finished = 1;"
+           << "        break;"
+           << "";
+  }
+
   // S -> input $
   {
     std::string rule_description{};
-    rule_description = "S -> ";
+    rule_description = "S ->";
     auto&& rule_body = rules.at(0).second;
     for (auto&& rule = rule_body.begin(); rule != rule_body.end(); ++rule) {
       rule_description += " " + id_to_token.at(*rule);
@@ -490,14 +514,14 @@ extern void generate_code(std::ostream* header_,
            << "         *   " + rule_description
            << "         */"
            << "        stack = ryx_stack_pop(stack);"
-           << "        stack = ryx_stack_push_move(stack, ryx_make_internal_token("
+           << "        stack = ryx_stack_push(stack, ryx_make_internal_token("
               + token_id_to_enum_string[last_term]
               + "));"
-           << "        stack = ryx_stack_push_move(stack, ryx_make_internal_token("
+           << "        stack = ryx_stack_push(stack, ryx_make_internal_token("
               + token_id_to_enum_string[special_token]
               + "));";
     for (auto&& it = rule_body.rbegin(); it != rule_body.rend(); ++it) {
-      ccfile << "        stack = ryx_stack_push_move(stack, ryx_make_internal_token("
+      ccfile << "        stack = ryx_stack_push(stack, ryx_make_internal_token("
                 + token_id_to_enum_string[*it]
                 + "));";
     }
@@ -513,6 +537,7 @@ extern void generate_code(std::ostream* header_,
            << "         *   <end-of-body> -> (empty)"
            << "         */"
            << "        stack = ryx_stack_pop(stack);"
+           << "        node = node->parent_node;"
            << "        break;"
            << "";
   }
@@ -525,6 +550,7 @@ extern void generate_code(std::ostream* header_,
            << "         *   @ -> (empty)"
            << "         */"
            << "        stack = ryx_stack_pop(stack);"
+           << "        node = ryx_tree_add_right(node, " + token_id_to_enum_string[atmark]  + ");"
            << "        break;"
            << "";
   }
@@ -540,6 +566,7 @@ extern void generate_code(std::ostream* header_,
     }
     ccfile << "      /* stack.top == " + id_to_token.at(nts_tid) + " */"
            << "      case " + token_id_to_enum_string[nts_tid] + ":"
+           << "        node = ryx_tree_add_right(node, " + token_id_to_enum_string[nts_tid]  + ");"
            << "        switch (shared_token->token->kind) {";
     auto&& table_row = table.at(nts_tid);
     std::unordered_map<rule_id, std::set<enum_id>> rule_map{};
@@ -577,14 +604,17 @@ extern void generate_code(std::ostream* header_,
           token_id input_token_id = enum_id_to_token_id[*input_token];
           ccfile << "          case " + token_id_to_enum_string[input_token_id] + ":";
         }
-        ccfile << "            stack = ryx_stack_pop(stack);"
-               << "            stack = ryx_stack_push_move(stack, ryx_make_internal_token("
-                  + token_id_to_enum_string[special_token]
-                  + "));";
-        for (auto&& it = rule.second.rbegin(); it != rule.second.rend(); ++it) {
-          ccfile << "            stack = ryx_stack_push_move(stack, ryx_make_internal_token("
-                    + token_id_to_enum_string[*it]
+        ccfile << "            stack = ryx_stack_pop(stack);";
+        if (rule.second.size() != 0) {
+          ccfile << "            stack = ryx_stack_push(stack, ryx_make_internal_token("
+                    + token_id_to_enum_string[special_token]
                     + "));";
+          for (auto&& it = rule.second.rbegin(); it != rule.second.rend(); ++it) {
+            ccfile << "            stack = ryx_stack_push(stack, ryx_make_internal_token("
+                      + token_id_to_enum_string[*it]
+                      + "));";
+          }
+          ccfile << "            node = node->sub_node_last;";
         }
         ccfile << "            break;"
                << "";
@@ -592,6 +622,7 @@ extern void generate_code(std::ostream* header_,
         ccfile << "          default:"
                << "            ryx_tree_free(ret);"
                << "            ryx_stack_free(stack);"
+               << "            ryx_unref_shared_token(shared_token);"
                << "            ret = NULLPTR;"
                << "            finished = 1;"
                << "            break;"
@@ -604,20 +635,19 @@ extern void generate_code(std::ostream* header_,
   }
 
   ccfile << "      default:"
+         << "        node = ryx_tree_add_right_shared_token(node, shared_token);"
          << "        if (stack->shared_token->token->kind == shared_token->token->kind) {"
          << "          stack = ryx_stack_pop(stack);"
-         << "          ryx_unref_shared_token(shared_token);"
          << "          shared_token = ryx_make_shared_token(ryx_get_next_token(input));"
          << "        } else {"
          << "          ryx_tree_free(ret);"
          << "          ryx_stack_free(stack);"
+         << "          ryx_unref_shared_token(shared_token);"
          << "          ret = NULLPTR;"
          << "          finished = 1;"
          << "        }"
          << "        break;"
-         << "";
-
-  ccfile << "    }"
+         << "    }"
          << "  }"
          << ""
          << "  return ret;"

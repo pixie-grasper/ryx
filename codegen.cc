@@ -571,11 +571,17 @@ extern void generate_code(std::ostream* header_,
       continue;
     }
     ccfile << "      /* stack.top == " + id_to_token.at(nts_tid) + " */"
-           << "      case " + token_id_to_enum_string[nts_tid] + ":"
-           << "        node = ryx_tree_add_right(node, "
-              + token_id_to_enum_string[nts_tid]
-              + ");"
-           << "        switch (shared_token->token->kind) {";
+           << "      case " + token_id_to_enum_string[nts_tid] + ":";
+    bool generated = false;
+    if (id_to_token.at(nts_tid).back() == ']' || id_to_token.at(nts_tid).back() == '/') {
+      generated = true;
+    }
+    if (!generated) {
+      ccfile << "        node = ryx_tree_add_right(node, "
+                + token_id_to_enum_string[nts_tid]
+                + ");";
+    }
+    ccfile << "        switch (shared_token->token->kind) {";
     auto&& table_row = table.at(nts_tid);
     std::unordered_map<rule_id, std::set<enum_id>> rule_map{};
     std::set<rule_id> rules_of_nts{};
@@ -622,7 +628,9 @@ extern void generate_code(std::ostream* header_,
                       + token_id_to_enum_string[*it]
                       + "));";
           }
-          ccfile << "            node = node->sub_node_last;";
+          if (!generated) {
+            ccfile << "            node = node->sub_node_last;";
+          }
         }
         ccfile << "            break;"
                << "";

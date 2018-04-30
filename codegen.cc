@@ -18,6 +18,8 @@
 
 #include <set>
 
+using enum_id = std::size_t;
+
 class ostream_with_newlines {
   std::ostream* os;
 
@@ -37,6 +39,8 @@ extern void generate_code(std::ostream* header_,
                           std::ostream* ccfile_,
                           token_id first_nonterm,
                           token_id last_term,
+                          token_id atmark,
+                          token_id special_token,
                           const token_set_type& terminate_symbols,
                           const token_set_type& non_terminate_symbols,
                           const id_to_token_type& id_to_token,
@@ -125,6 +129,7 @@ extern void generate_code(std::ostream* header_,
   header << "enum ryx_node_kind {";
 
   std::unordered_map<token_id, std::string> token_id_to_enum_string{};
+  std::unordered_map<token_id, enum_id> token_id_to_enum_id{};
   for (int i = 0; i < 256; ++i) {
     std::string token_string{};
     if (0x20 <= i && i <= 0x7E) {
@@ -155,6 +160,7 @@ extern void generate_code(std::ostream* header_,
                               + token_string;
     header << header_string;
     token_id_to_enum_string[it->second] = enum_string;
+    token_id_to_enum_id[it->second] = number;
   }
 
   std::set<std::string> sorted_ts_string{};
@@ -166,10 +172,24 @@ extern void generate_code(std::ostream* header_,
     }
     sorted_ts_string.insert(id_to_token.find(*it)->second);
   }
-  std::size_t ts_index = 0;
+  enum_id enum_id_ts_base = token_id_to_enum_string.size();
+  // end of the input
+  {
+    std::size_t number = token_id_to_enum_string.size();
+    std::string enum_string = "ryx_node_kind_term_" + std::to_string(number - enum_id_ts_base);
+    std::string header_string = "  "
+                              + enum_string
+                              + " = "
+                              + std::to_string(number)
+                              + ", // $; end of the input.";
+    header << header_string;
+    token_id_to_enum_string[last_term] = enum_string;
+    token_id_to_enum_id[last_term] = number;
+  }
+  // regular TS
   for (auto&& it = sorted_ts_string.begin(); it != sorted_ts_string.end(); ++it) {
     std::size_t number = token_id_to_enum_string.size();
-    std::string enum_string = "ryx_node_kind_term_" + std::to_string(ts_index);
+    std::string enum_string = "ryx_node_kind_term_" + std::to_string(number - enum_id_ts_base);
     std::string header_string = "  "
                               + enum_string
                               + " = "
@@ -177,8 +197,9 @@ extern void generate_code(std::ostream* header_,
                               + ", // "
                               + *it;
     header << header_string;
-    token_id_to_enum_string[token_to_id.find(*it)->second] = enum_string;
-    ++ts_index;
+    token_id ts_id = token_to_id.find(*it)->second;
+    token_id_to_enum_string[ts_id] = enum_string;
+    token_id_to_enum_id[ts_id] = number;
   }
 
   std::set<std::string> sorted_nts_string{};
@@ -187,19 +208,55 @@ extern void generate_code(std::ostream* header_,
               ++it) {
     sorted_nts_string.insert(id_to_token.at(*it));
   }
-  std::size_t nts_index = 0;
+  enum_id enum_id_nts_base = token_id_to_enum_string.size();
+  // stack top at the begins
+  {
+    std::size_t number = token_id_to_enum_string.size();
+    std::string enum_string = "ryx_node_kind_nonterm_" + std::to_string(number - enum_id_nts_base);
+    std::string header_string = "  "
+                              + enum_string
+                              + " = "
+                              + std::to_string(number)
+                              + ", // stack top at the begins.";
+    header << header_string;
+    token_id_to_enum_string[first_nonterm] = enum_string;
+    token_id_to_enum_id[first_nonterm] = number;
+  }
+  // special token
+  {
+    std::size_t number = token_id_to_enum_string.size();
+    std::string enum_string = "ryx_node_kind_nonterm_" + std::to_string(number - enum_id_nts_base);
+    std::string header_string = "  "
+                              + enum_string
+                              + " = "
+                              + std::to_string(number)
+                              + ", // special token.";
+    header << header_string;
+    token_id_to_enum_string[special_token] = enum_string;
+    token_id_to_enum_id[special_token] = number;
+  }
+  // regular NTS
   for (auto&& it = sorted_nts_string.begin(); it != sorted_nts_string.end(); ++it) {
     std::size_t number = token_id_to_enum_string.size();
-    std::string enum_string = "ryx_node_kind_nonterm_" + std::to_string(nts_index);
+    std::string enum_string = "ryx_node_kind_nonterm_" + std::to_string(number - enum_id_nts_base);
     std::string header_string = "  "
                               + enum_string
                               + " = "
                               + std::to_string(number)
                               + ", // "
                               + *it;
+    token_id nts_id = token_to_id.find(*it)->second;
+    if (nts_id == first_nonterm) {
+      continue;
+    }
     header << header_string;
-    token_id_to_enum_string[token_to_id.find(*it)->second] = enum_string;
-    ++nts_index;
+    token_id_to_enum_string[nts_id] = enum_string;
+    token_id_to_enum_id[nts_id] = number;
+  }
+
+  std::unordered_map<enum_id, token_id> enum_id_to_token_id{};
+  for (auto&& it = token_id_to_enum_id.begin(); it != token_id_to_enum_id.end(); ++it) {
+    enum_id_to_token_id[it->second] = it->first;
   }
 
   header << "};"
@@ -224,7 +281,8 @@ extern void generate_code(std::ostream* header_,
   ccfile << "struct ryx_tree {"
          << "  struct ryx_shared_token* shared_token;"
          << "  struct ryx_tree* next_node;"
-         << "  struct ryx_tree* sub_node;"
+         << "  struct ryx_tree* sub_node_first;"
+         << "  struct ryx_tree* sub_node_last;"
          << "};"
          << "";
 
@@ -333,14 +391,61 @@ extern void generate_code(std::ostream* header_,
          << "";
 
   ccfile << "INTERN"
+         << "struct ryx_stack* ryx_stack_pop(struct ryx_stack* stack) {"
+         << "  struct ryx_stack* ret;"
+         << ""
+         << "  ret = stack->next;"
+         << "  ryx_unref_shared_token(stack->shared_token);"
+         << "  free(stack);"
+         << ""
+         << "  return ret;"
+         << "}"
+         << "INTERN_END"
+         << "";
+
+  ccfile << "INTERN"
+         << "void ryx_stack_free(struct ryx_stack* stack) {"
+         << "  struct ryx_stack* node;"
+         << ""
+         << "  while (stack != NULLPTR) {"
+         << "    node = stack->next;"
+         << "    ryx_unref_shared_token(stack->shared_token);"
+         << "    free(stack);"
+         << "    stack = node;"
+         << "  }"
+         << ""
+         << "  return;"
+         << "}"
+         << "INTERN_END"
+         << "";
+
+  ccfile << "INTERN"
+         << "void ryx_tree_free(struct ryx_tree* tree) {"
+         << "  struct ryx_tree* node;"
+         << ""
+         << "  if (tree == NULLPTR) {"
+         << "    return;"
+         << "  }"
+         << ""
+         << "  while (tree != NULLPTR) {"
+         << "    ryx_tree_free(tree->sub_node_first);"
+         << "    ryx_unref_shared_token(tree->shared_token);"
+         << "    node = tree->next_node;"
+         << "    free(tree);"
+         << "    tree = node;"
+         << "  }"
+         << ""
+         << "  return;"
+         << "}"
+         << "INTERN_END"
+         << "";
+
+  ccfile << "INTERN"
          << "struct ryx_stack* ryx_make_initial_stack(void) {"
          << "  struct ryx_stack* ret;"
          << ""
          << "  ret = NULLPTR;"
          << ""
-         << "  ret = ryx_stack_push_move(ret, ryx_make_internal_token("
-            + token_id_to_enum_string[last_term]
-            + "));"
          << "  ret = ryx_stack_push_move(ret, ryx_make_internal_token("
             + token_id_to_enum_string[first_nonterm]
             + "));"
@@ -360,14 +465,158 @@ extern void generate_code(std::ostream* header_,
          << ""
          << "  stack = ryx_make_initial_stack();"
          << "  ret = NULLPTR;"
-         << "  node = ret;"
+         << "  node = NULLPTR;"
          << "  finished = 0;"
+         << "  shared_token = ryx_make_shared_token(ryx_get_next_token(input));"
          << ""
          << "  while (!finished) {"
          << "    switch (stack->shared_token->token->kind) {";
 
+  // S -> input $
+  {
+    std::string rule_description{};
+    rule_description = "S -> ";
+    auto&& rule_body = rules.at(0).second;
+    for (auto&& rule = rule_body.begin(); rule != rule_body.end(); ++rule) {
+      rule_description += " " + id_to_token.at(*rule);
+    }
+    rule_description += " $";
+    ccfile << "      /* stack.top == S */"
+           << "      case " + token_id_to_enum_string[first_nonterm] + ":"
+           << "        /* rule 0"
+           << "         *   " + rule_description
+           << "         */"
+           << "        stack = ryx_stack_pop(stack);"
+           << "        stack = ryx_stack_push_move(stack, ryx_make_internal_token("
+              + token_id_to_enum_string[last_term]
+              + "));"
+           << "        stack = ryx_stack_push_move(stack, ryx_make_internal_token("
+              + token_id_to_enum_string[special_token]
+              + "));";
+    for (auto&& it = rule_body.rbegin(); it != rule_body.rend(); ++it) {
+      ccfile << "        stack = ryx_stack_push_move(stack, ryx_make_internal_token("
+                + token_id_to_enum_string[*it]
+                + "));";
+    }
+    ccfile << "        break;"
+           << "";
+  }
+
+  // end of rule
+  {
+    ccfile << "      /* stack.top == <end-of-body> */"
+           << "      case " + token_id_to_enum_string[special_token] + ":"
+           << "        /* extra rule"
+           << "         *   <end-of-body> -> (empty)"
+           << "         */"
+           << "        stack = ryx_stack_pop(stack);"
+           << "        break;"
+           << "";
+  }
+
+  // @ -> (empty)
+  {
+    ccfile << "      /* stack.top == @ */"
+           << "      case " + token_id_to_enum_string[atmark] + ":"
+           << "        /* extra rule"
+           << "         *   @ -> (empty)"
+           << "         */"
+           << "        stack = ryx_stack_pop(stack);"
+           << "        break;"
+           << "";
+  }
+
+  for (enum_id nts_eid = enum_id_nts_base; nts_eid < enum_id_to_token_id.size(); ++nts_eid) {
+    token_id nts_tid = enum_id_to_token_id[nts_eid];
+    if (table.find(nts_tid) == table.end()) {
+      continue;
+    } else if (nts_tid == first_nonterm) {
+      continue;
+    } else if (nts_tid == atmark) {
+      continue;
+    }
+    ccfile << "      /* stack.top == " + id_to_token.at(nts_tid) + " */"
+           << "      case " + token_id_to_enum_string[nts_tid] + ":"
+           << "        switch (shared_token->token->kind) {";
+    auto&& table_row = table.at(nts_tid);
+    std::unordered_map<rule_id, std::set<enum_id>> rule_map{};
+    std::set<rule_id> rules_of_nts{};
+    for (auto&& it2 = table_row.begin(); it2 != table_row.end(); ++it2) {
+      token_id ts_tid = it2->first;
+      rule_id rid = it2->second;
+      if (rule_map.find(rid) == rule_map.end()) {
+        rule_map.insert(std::make_pair(rid, std::set<enum_id>()));
+        rules_of_nts.insert(rid);
+      }
+      rule_map[rid].insert(token_id_to_enum_id[ts_tid]);
+    }
+    rule_id empty_rule_id = rules.size();
+    for (auto&& rule_of_nts = rules_of_nts.begin();
+                rule_of_nts != rules_of_nts.end();
+                ++rule_of_nts) {
+      rule_id nts_rid = *rule_of_nts;
+      if (nts_rid != empty_rule_id) {
+        auto&& rule = rules.at(nts_rid);
+        std::string rule_description = id_to_token.at(rule.first) + " ->";
+        if (rule.second.size() == 0) {
+          rule_description += " (empty)";
+        } else {
+          for (std::size_t i = 0; i < rule.second.size(); ++i) {
+            rule_description += " " + id_to_token.at(rule.second.at(i));
+          }
+        }
+        ccfile << "          /* rule " + std::to_string(nts_rid)
+               << "           *   " + rule_description
+               << "           */";
+        for (auto&& input_token = rule_map[nts_rid].begin();
+                    input_token != rule_map[nts_rid].end();
+                    ++input_token) {
+          token_id input_token_id = enum_id_to_token_id[*input_token];
+          ccfile << "          case " + token_id_to_enum_string[input_token_id] + ":";
+        }
+        ccfile << "            stack = ryx_stack_pop(stack);"
+               << "            stack = ryx_stack_push_move(stack, ryx_make_internal_token("
+                  + token_id_to_enum_string[special_token]
+                  + "));";
+        for (auto&& it = rule.second.rbegin(); it != rule.second.rend(); ++it) {
+          ccfile << "            stack = ryx_stack_push_move(stack, ryx_make_internal_token("
+                    + token_id_to_enum_string[*it]
+                    + "));";
+        }
+        ccfile << "            break;"
+               << "";
+      } else {
+        ccfile << "          default:"
+               << "            ryx_tree_free(ret);"
+               << "            ryx_stack_free(stack);"
+               << "            ret = NULLPTR;"
+               << "            finished = 1;"
+               << "            break;"
+               << "";
+      }
+    }
+    ccfile << "        }"
+           << "        break;"
+           << "";
+  }
+
+  ccfile << "      default:"
+         << "        if (stack->shared_token->token->kind == shared_token->token->kind) {"
+         << "          stack = ryx_stack_pop(stack);"
+         << "          ryx_unref_shared_token(shared_token);"
+         << "          shared_token = ryx_make_shared_token(ryx_get_next_token(input));"
+         << "        } else {"
+         << "          ryx_tree_free(ret);"
+         << "          ryx_stack_free(stack);"
+         << "          ret = NULLPTR;"
+         << "          finished = 1;"
+         << "        }"
+         << "        break;"
+         << "";
+
   ccfile << "    }"
          << "  }"
+         << ""
          << "  return ret;"
          << "}"
          << "";
@@ -397,7 +646,7 @@ extern void generate_code(std::ostream* header_,
          << "  if (node == NULL) {"
          << "    return NULL;"
          << "  } else {"
-         << "    return node->sub_node;"
+         << "    return node->sub_node_first;"
          << "  }"
          << "}"
          << "";

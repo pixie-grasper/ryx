@@ -1299,6 +1299,13 @@ class context {
     }
 
     // add extra rule
+    token_id start_symbol_id = get_id("^");
+    if (nts.find(start_symbol_id) == nts.end()) {
+      nts.insert(start_symbol_id);
+      std::vector<token_id> rule{};
+      rule.push_back(get_id("input"));
+      add_rule(ret, start_symbol_id, std::move(rule));
+    }
     token_id space_token_id = get_id(":ws:");
     if (nts.find(space_token_id) == nts.end()) {
       nts.insert(space_token_id);
@@ -2101,7 +2108,7 @@ class context {
       }
     }
 
-    token_id start_symbol_id = get_id("input");
+    token_id start_symbol_id = get_id("^");
     work->follow[start_symbol_id].insert(did);
 
     bool updated = true;
@@ -2600,8 +2607,10 @@ class context {
     if (ll1p) {
       ::generate_code(header,
                       ccfile,
-                      get_id("input"),
+                      get_id("^"),
                       get_id("$"),
+                      get_id(":@:"),
+                      get_id("<end-of-body>"),
                       work->ts,
                       work->nts,
                       id_to_token,

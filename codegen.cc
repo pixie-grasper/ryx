@@ -272,17 +272,11 @@ extern void generate_code(std::ostream* header_,
          << "};"
          << "";
 
-  ccfile << "struct ryx_shared_token {"
-         << "  struct ryx_token* token;"
-         << "  int refcount;"
-         << "};"
-         << "";
-
   header << "struct ryx_tree;"
          << "";
 
   ccfile << "struct ryx_tree {"
-         << "  struct ryx_shared_token* shared_token;"
+         << "  struct ryx_token* token;"
          << "  struct ryx_tree* parent_node;"
          << "  struct ryx_tree* next_node;"
          << "  struct ryx_tree* sub_node_first;"
@@ -291,7 +285,7 @@ extern void generate_code(std::ostream* header_,
          << "";
 
   ccfile << "struct ryx_stack {"
-         << "  struct ryx_shared_token* shared_token;"
+         << "  struct ryx_token* token;"
          << "  struct ryx_stack* next;"
          << "};"
          << "";
@@ -311,30 +305,21 @@ extern void generate_code(std::ostream* header_,
          << "";
 
   ccfile << "INTERN"
-         << "void ryx_ref_shared_token(struct ryx_shared_token* shared_token) {"
-         << "  shared_token->refcount++;"
-         << "  return;"
-         << "}"
-         << "INTERN_END"
-         << "";
-
-  ccfile << "INTERN"
-         << "void ryx_unref_shared_token(struct ryx_shared_token* shared_token) {"
-         << "  shared_token->refcount--;"
-         << "  if (shared_token->refcount == 0) {"
-         << "    if (shared_token->token->free != NULLPTR) {"
-         << "      shared_token->token->free(shared_token->token);"
-         << "    }"
-         << "    free(shared_token);"
+         << "void ryx_token_free(struct ryx_token* token) {"
+         << "  if (token->free != NULLPTR) {"
+         << "    token->free(token);"
+         << "  } else {"
+         << "    free(token->data);"
+         << "    free(token);"
          << "  }"
+         << ""
          << "  return;"
          << "}"
          << "INTERN_END"
          << "";
 
   ccfile << "INTERN"
-         << "struct ryx_shared_token* ryx_make_internal_token(enum ryx_node_kind kind) {"
-         << "  struct ryx_shared_token* shared_token;"
+         << "struct ryx_token* ryx_make_internal_token(enum ryx_node_kind kind) {"
          << "  struct ryx_token* token;"
          << ""
          << "  token = MALLOC(struct ryx_token);"
@@ -342,35 +327,18 @@ extern void generate_code(std::ostream* header_,
          << "  token->data = NULLPTR;"
          << "  token->free = ryx_free_internal_token;"
          << ""
-         << "  shared_token = MALLOC(struct ryx_shared_token);"
-         << "  shared_token->token = token;"
-         << "  shared_token->refcount = 1;"
-         << ""
-         << "  return shared_token;"
-         << "}"
-         << "INTERN_END"
-         << "";
-
-  ccfile << "INTERN"
-         << "struct ryx_shared_token* ryx_make_shared_token(struct ryx_token* token) {"
-         << "  struct ryx_shared_token* shared_token;"
-         << ""
-         << "  shared_token = MALLOC(struct ryx_shared_token);"
-         << "  shared_token->token = token;"
-         << "  shared_token->refcount = 1;"
-         << ""
-         << "  return shared_token;"
+         << "  return token;"
          << "}"
          << "INTERN_END"
          << "";
 
   ccfile << "INTERN"
          << "struct ryx_stack* ryx_stack_push(struct ryx_stack* stack,"
-         << "                                 struct ryx_shared_token* shared_token) {"
+         << "                                 struct ryx_token* token) {"
          << "  struct ryx_stack* ret;"
          << ""
          << "  ret = MALLOC(struct ryx_stack);"
-         << "  ret->shared_token = shared_token;"
+         << "  ret->token = token;"
          << "  ret->next = stack;"
          << ""
          << "  return ret;"
@@ -383,7 +351,6 @@ extern void generate_code(std::ostream* header_,
          << "  struct ryx_stack* ret;"
          << ""
          << "  ret = stack->next;"
-         << "  ryx_unref_shared_token(stack->shared_token);"
          << "  free(stack);"
          << ""
          << "  return ret;"
@@ -397,7 +364,6 @@ extern void generate_code(std::ostream* header_,
          << ""
          << "  while (stack != NULLPTR) {"
          << "    node = stack->next;"
-         << "    ryx_unref_shared_token(stack->shared_token);"
          << "    free(stack);"
          << "    stack = node;"
          << "  }"
@@ -408,10 +374,8 @@ extern void generate_code(std::ostream* header_,
          << "";
 
   ccfile << "INTERN"
-         << "struct ryx_tree* ryx_tree_add_right_shared_token("
-            "struct ryx_tree* tree,"
-         << "                                                 "
-            "struct ryx_shared_token* shared_token) {"
+         << "struct ryx_tree* ryx_tree_add_right_token(struct ryx_tree* tree,"
+         << "                                          struct ryx_token* token) {"
          << "  if (tree->sub_node_last == NULLPTR) {"
          << "    tree->sub_node_first = MALLOC(struct ryx_tree);"
          << "    tree->sub_node_last = tree->sub_node_first;"
@@ -420,7 +384,7 @@ extern void generate_code(std::ostream* header_,
          << "    tree->sub_node_last = tree->sub_node_last->next_node;"
          << "  }"
          << ""
-         << "  tree->sub_node_last->shared_token = shared_token;"
+         << "  tree->sub_node_last->token = token;"
          << "  tree->sub_node_last->parent_node = tree;"
          << "  tree->sub_node_last->next_node = NULLPTR;"
          << "  tree->sub_node_last->sub_node_first = NULLPTR;"
@@ -434,7 +398,7 @@ extern void generate_code(std::ostream* header_,
   ccfile << "INTERN"
          << "struct ryx_tree* ryx_tree_add_right(struct ryx_tree* tree,"
          << "                                    enum ryx_node_kind kind) {"
-         << "  return ryx_tree_add_right_shared_token(tree, ryx_make_internal_token(kind));"
+         << "  return ryx_tree_add_right_token(tree, ryx_make_internal_token(kind));"
          << "}"
          << "INTERN_END"
          << "";
@@ -449,7 +413,7 @@ extern void generate_code(std::ostream* header_,
          << ""
          << "  while (tree != NULLPTR) {"
          << "    ryx_tree_free(tree->sub_node_first);"
-         << "    ryx_unref_shared_token(tree->shared_token);"
+         << "    ryx_token_free(tree->token);"
          << "    node = tree->next_node;"
          << "    free(tree);"
          << "    tree = node;"
@@ -465,14 +429,14 @@ extern void generate_code(std::ostream* header_,
          << "  struct ryx_stack* stack;"
          << "  struct ryx_tree* ret;"
          << "  struct ryx_tree* node;"
-         << "  struct ryx_shared_token* shared_token;"
+         << "  struct ryx_token* token;"
          << "  int finished;"
          << ""
          << "  stack = ryx_stack_push(NULLPTR, ryx_make_internal_token("
             + token_id_to_enum_string[first_nonterm]
             + "));"
          << "  ret = MALLOC(struct ryx_tree);"
-         << "  ret->shared_token = ryx_make_internal_token("
+         << "  ret->token = ryx_make_internal_token("
             + token_id_to_enum_string[first_nonterm]
             + ");"
          << "  ret->parent_node = NULLPTR;"
@@ -481,23 +445,21 @@ extern void generate_code(std::ostream* header_,
          << "  ret->sub_node_last = NULLPTR;"
          << "  node = ret;"
          << "  finished = 0;"
-         << "  shared_token = ryx_make_shared_token(ryx_get_next_token(input));"
+         << "  token = ryx_get_next_token(input);"
          << ""
          << "  while (!finished) {"
-         << "    switch (stack->shared_token->token->kind) {";
+         << "    switch (stack->token->kind) {";
 
   // $
   {
     ccfile << "      // stack.top == $"
            << "      case " + token_id_to_enum_string[last_term] + ":"
-           << "        if (shared_token->token->kind != "
-              + token_id_to_enum_string[last_term]
-              + ") {"
+           << "        if (token->kind != " + token_id_to_enum_string[last_term] + ") {"
            << "          ryx_tree_free(ret);"
            << "          ret = NULLPTR;"
            << "        }"
            << "        ryx_stack_free(stack);"
-           << "        ryx_unref_shared_token(shared_token);"
+           << "        ryx_token_free(token);"
            << "        finished = 1;"
            << "        break;"
            << "";
@@ -578,7 +540,7 @@ extern void generate_code(std::ostream* header_,
                 + token_id_to_enum_string[nts_tid]
                 + ");";
     }
-    ccfile << "        switch (shared_token->token->kind) {";
+    ccfile << "        switch (token->kind) {";
     auto&& table_row = table.at(nts_tid);
     std::unordered_map<rule_id, std::set<enum_id>> rule_map{};
     std::set<rule_id> rules_of_nts{};
@@ -634,7 +596,7 @@ extern void generate_code(std::ostream* header_,
         ccfile << "          default:"
                << "            ryx_tree_free(ret);"
                << "            ryx_stack_free(stack);"
-               << "            ryx_unref_shared_token(shared_token);"
+               << "            ryx_token_free(token);"
                << "            ret = NULLPTR;"
                << "            finished = 1;"
                << "            break;"
@@ -647,14 +609,13 @@ extern void generate_code(std::ostream* header_,
   }
 
   ccfile << "      default:"
-         << "        node = ryx_tree_add_right_shared_token(node, shared_token);"
-         << "        if (stack->shared_token->token->kind == shared_token->token->kind) {"
+         << "        node = ryx_tree_add_right_token(node, token);"
+         << "        if (stack->token->kind == token->kind) {"
          << "          stack = ryx_stack_pop(stack);"
-         << "          shared_token = ryx_make_shared_token(ryx_get_next_token(input));"
+         << "          token = ryx_get_next_token(input);"
          << "        } else {"
          << "          ryx_tree_free(ret);"
          << "          ryx_stack_free(stack);"
-         << "          ryx_unref_shared_token(shared_token);"
          << "          ret = NULLPTR;"
          << "          finished = 1;"
          << "        }"
@@ -671,7 +632,7 @@ extern void generate_code(std::ostream* header_,
          << "  if (node == NULL) {"
          << "    return NULL;"
          << "  } else {"
-         << "    return node->shared_token->token;"
+         << "    return node->token;"
          << "  }"
          << "}"
          << "";

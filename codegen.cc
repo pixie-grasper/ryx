@@ -408,8 +408,10 @@ extern void generate_code(std::ostream* header_,
          << "";
 
   ccfile << "INTERN"
-         << "struct ryx_tree* ryx_tree_add_right_shared_token(struct ryx_tree* tree,"
-         << "                                                 struct ryx_shared_token* shared_token) {"
+         << "struct ryx_tree* ryx_tree_add_right_shared_token("
+            "struct ryx_tree* tree,"
+         << "                                                 "
+            "struct ryx_shared_token* shared_token) {"
          << "  if (tree->sub_node_last == NULLPTR) {"
          << "    tree->sub_node_first = MALLOC(struct ryx_tree);"
          << "    tree->sub_node_last = tree->sub_node_first;"
@@ -488,7 +490,9 @@ extern void generate_code(std::ostream* header_,
   {
     ccfile << "      /* stack.top == $ */"
            << "      case " + token_id_to_enum_string[last_term] + ":"
-           << "        if (shared_token->token->kind != " + token_id_to_enum_string[last_term] + ") {"
+           << "        if (shared_token->token->kind != "
+              + token_id_to_enum_string[last_term]
+              + ") {"
            << "          ryx_tree_free(ret);"
            << "          ret = NULLPTR;"
            << "        }"
@@ -550,7 +554,9 @@ extern void generate_code(std::ostream* header_,
            << "         *   @ -> (empty)"
            << "         */"
            << "        stack = ryx_stack_pop(stack);"
-           << "        node = ryx_tree_add_right(node, " + token_id_to_enum_string[atmark]  + ");"
+           << "        node = ryx_tree_add_right(node, "
+              + token_id_to_enum_string[atmark]
+              + ");"
            << "        break;"
            << "";
   }
@@ -566,7 +572,9 @@ extern void generate_code(std::ostream* header_,
     }
     ccfile << "      /* stack.top == " + id_to_token.at(nts_tid) + " */"
            << "      case " + token_id_to_enum_string[nts_tid] + ":"
-           << "        node = ryx_tree_add_right(node, " + token_id_to_enum_string[nts_tid]  + ");"
+           << "        node = ryx_tree_add_right(node, "
+              + token_id_to_enum_string[nts_tid]
+              + ");"
            << "        switch (shared_token->token->kind) {";
     auto&& table_row = table.at(nts_tid);
     std::unordered_map<rule_id, std::set<enum_id>> rule_map{};

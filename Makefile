@@ -15,8 +15,11 @@ ifeq ($(HOST),Linux)
 	ifeq ($(shell sh -c 'if which nproc > /dev/null 2>&1; then echo 1; else echo 0; fi'),1)
 		NJOB = $(shell nproc)
 	endif
-else
-	NJOB = 2
+endif
+
+# Mac OS X
+ifeq ($(HOST),Darwin)
+	NJOB = $(shell sysctl -n hw.ncpu)
 endif
 
 default: in_parallel

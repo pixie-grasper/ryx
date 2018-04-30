@@ -488,7 +488,7 @@ extern void generate_code(std::ostream* header_,
 
   // $
   {
-    ccfile << "      /* stack.top == $ */"
+    ccfile << "      // stack.top == $"
            << "      case " + token_id_to_enum_string[last_term] + ":"
            << "        if (shared_token->token->kind != "
               + token_id_to_enum_string[last_term]
@@ -512,11 +512,10 @@ extern void generate_code(std::ostream* header_,
       rule_description += " " + id_to_token.at(*rule);
     }
     rule_description += " $";
-    ccfile << "      /* stack.top == S */"
+    ccfile << "      // stack.top == S"
            << "      case " + token_id_to_enum_string[first_nonterm] + ":"
-           << "        /* rule 0"
-           << "         *   " + rule_description
-           << "         */"
+           << "        // rule 0"
+           << "        //   " + rule_description
            << "        stack = ryx_stack_pop(stack);"
            << "        stack = ryx_stack_push(stack, ryx_make_internal_token("
               + token_id_to_enum_string[last_term]
@@ -535,11 +534,10 @@ extern void generate_code(std::ostream* header_,
 
   // end of rule
   {
-    ccfile << "      /* stack.top == <end-of-body> */"
+    ccfile << "      // stack.top == <end-of-body>"
            << "      case " + token_id_to_enum_string[special_token] + ":"
-           << "        /* extra rule"
-           << "         *   <end-of-body> -> (empty)"
-           << "         */"
+           << "        // extra rule"
+           << "        //   <end-of-body> -> (empty)"
            << "        stack = ryx_stack_pop(stack);"
            << "        node = node->parent_node;"
            << "        break;"
@@ -548,11 +546,10 @@ extern void generate_code(std::ostream* header_,
 
   // @ -> (empty)
   {
-    ccfile << "      /* stack.top == @ */"
+    ccfile << "      // stack.top == @"
            << "      case " + token_id_to_enum_string[atmark] + ":"
-           << "        /* extra rule"
-           << "         *   @ -> (empty)"
-           << "         */"
+           << "        // extra rule"
+           << "        //   @ -> (empty)"
            << "        stack = ryx_stack_pop(stack);"
            << "        node = ryx_tree_add_right(node, "
               + token_id_to_enum_string[atmark]
@@ -570,7 +567,7 @@ extern void generate_code(std::ostream* header_,
     } else if (nts_tid == atmark) {
       continue;
     }
-    ccfile << "      /* stack.top == " + id_to_token.at(nts_tid) + " */"
+    ccfile << "      // stack.top == " + id_to_token.at(nts_tid)
            << "      case " + token_id_to_enum_string[nts_tid] + ":";
     bool generated = false;
     if (id_to_token.at(nts_tid).back() == ']' || id_to_token.at(nts_tid).back() == '/') {
@@ -609,9 +606,8 @@ extern void generate_code(std::ostream* header_,
             rule_description += " " + id_to_token.at(rule.second.at(i));
           }
         }
-        ccfile << "          /* rule " + std::to_string(nts_rid)
-               << "           *   " + rule_description
-               << "           */";
+        ccfile << "          // rule " + std::to_string(nts_rid)
+               << "          //   " + rule_description;
         for (auto&& input_token = rule_map[nts_rid].begin();
                     input_token != rule_map[nts_rid].end();
                     ++input_token) {

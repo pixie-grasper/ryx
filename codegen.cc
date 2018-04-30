@@ -212,7 +212,8 @@ extern void generate_code(std::ostream* header_,
   // stack top at the begins
   {
     std::size_t number = token_id_to_enum_string.size();
-    std::string enum_string = "ryx_node_kind_nonterm_" + std::to_string(number - enum_id_nts_base);
+    std::string enum_string = "ryx_node_kind_nonterm_"
+                            + std::to_string(number - enum_id_nts_base);
     std::string header_string = "  "
                               + enum_string
                               + " = "
@@ -225,7 +226,8 @@ extern void generate_code(std::ostream* header_,
   // special token
   {
     std::size_t number = token_id_to_enum_string.size();
-    std::string enum_string = "ryx_node_kind_nonterm_" + std::to_string(number - enum_id_nts_base);
+    std::string enum_string = "ryx_node_kind_nonterm_"
+                            + std::to_string(number - enum_id_nts_base);
     std::string header_string = "  "
                               + enum_string
                               + " = "
@@ -238,7 +240,8 @@ extern void generate_code(std::ostream* header_,
   // regular NTS
   for (auto&& it = sorted_nts_string.begin(); it != sorted_nts_string.end(); ++it) {
     std::size_t number = token_id_to_enum_string.size();
-    std::string enum_string = "ryx_node_kind_nonterm_" + std::to_string(number - enum_id_nts_base);
+    std::string enum_string = "ryx_node_kind_nonterm_"
+                            + std::to_string(number - enum_id_nts_base);
     std::string header_string = "  "
                               + enum_string
                               + " = "

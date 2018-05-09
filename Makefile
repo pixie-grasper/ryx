@@ -22,6 +22,13 @@ ifeq ($(HOST),Darwin)
 	NJOB = $(shell sysctl -n hw.ncpu)
 endif
 
+# Windows
+ifneq ($(findstring MINGW,$(HOST)),)
+	ifeq ($(shell sh -c 'if which nproc > /dev/null 2>&1; then echo 1; else echo 0; fi'),1)
+		NJOB = $(shell nproc)
+	endif
+endif
+
 default: in_parallel
 
 .PHONY: in_parallel
